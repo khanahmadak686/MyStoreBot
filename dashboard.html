@@ -3,24 +3,32 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Seller Dashboard</title>
+    <title>Kirana Seller Dashboard</title>
     <style>
         body { font-family: Arial; padding: 20px; background-color: #f4f4f9; }
         .container { max-width: 400px; margin: auto; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 0 10px rgba(0,0,0,0.1); }
-        input { width: 100%; padding: 10px; margin: 10px 0; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box; }
-        button { width: 100%; padding: 10px; background-color: #28a745; color: white; border: none; border-radius: 4px; cursor: pointer; }
+        input, select { width: 100%; padding: 10px; margin: 10px 0; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box; }
+        button { width: 100%; padding: 10px; background-color: #28a745; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 16px; }
         button:hover { background-color: #218838; }
     </style>
 </head>
 <body>
     <div class="container">
-        <h2>🛍️ Add New Product</h2>
+        <h2>🛒 Kirana Store Dashboard</h2>
         <form action="/add-product" method="POST">
             <label>Product Name:</label>
-            <input type="text" name="name" placeholder="E.g. Black T-Shirt" required>
+            <input type="text" name="name" placeholder="E.g. Aashirvaad Atta 5kg" required>
             
+            <label>Category:</label>
+            <select name="category" required>
+                <option value="Ration & Masale">Ration & Masale</option>
+                <option value="Snacks & Biscuits">Snacks & Biscuits</option>
+                <option value="Cleaning & Toiletries">Cleaning & Toiletries</option>
+                <option value="Others">Others</option>
+            </select>
+
             <label>Price (in ₹):</label>
-            <input type="number" name="price" placeholder="499" required>
+            <input type="number" name="price" placeholder="250" required>
             
             <label>Product Image Link (URL):</label>
             <input type="url" name="image" placeholder="https://link-to-image.jpg" required>
