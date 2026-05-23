@@ -20,7 +20,7 @@
         <h2>🛒 Add New Item</h2>
         <form action="/add-product" method="POST">
             <label>Product Name:</label>
-            <input type="text" name="name" placeholder="E.g. Aashirvaad Atta 5kg" required>
+            <input type="text" name="name" placeholder="E.g. Aashirvaad Atta" required>
             
             <label>Category:</label>
             <select name="category" required>
@@ -29,6 +29,9 @@
                 <option value="Cleaning & Toiletries">Cleaning & Toiletries</option>
                 <option value="Others">Others</option>
             </select>
+
+            <label>Weight / Quantity (Unit):</label>
+            <input type="text" name="unit" placeholder="E.g. 1 kg, 500 ml, 1 Piece" required>
 
             <label>Price (in ₹):</label>
             <input type="number" name="price" placeholder="250" required>
