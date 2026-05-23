@@ -8,7 +8,7 @@ const token = '8998018950:AAECsgWiq5cSLYyh63MC2lqRmKw2a8-TzTU';
 const adminChatId = '1703328653'; 
 const myUpiId = 'ar844042@okicici'; 
 const myStoreName = 'My Kirana Store';
-const myBotUsername = 'YOUR_BOT_USERNAME_HERE'; // 🛠️ YAHAN APNE BOT KA USERNAME DAALEIN (Bina @ ke)
+const myBotUsername = 'TheSmartSeller_store'; // 🛠️ YAHAN APNE BOT KA USERNAME DAALEIN (Bina @ ke)
 
 const bot = new TelegramBot(token, {polling: true});
 const app = express();
