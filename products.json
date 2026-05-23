@@ -1,1 +1,47 @@
-[]
+[
+  {
+    "name": "Aashirvaad Shudh Chakki Atta",
+    "category": "Ration & Masale",
+    "unit": "5 kg",
+    "price": 240,
+    "stock": 50,
+    "image": "https://upload.wikimedia.org/wikipedia/commons/thumb/1/12/Wheat_flour.jpg/640px-Wheat_flour.jpg",
+    "id": "prod_1700000000001"
+  },
+  {
+    "name": "Tata Namak (Salt)",
+    "category": "Ration & Masale",
+    "unit": "1 kg",
+    "price": 28,
+    "stock": 100,
+    "image": "https://upload.wikimedia.org/wikipedia/commons/thumb/2/23/Salt_shaker_on_white_background.jpg/640px-Salt_shaker_on_white_background.jpg",
+    "id": "prod_1700000000002"
+  },
+  {
+    "name": "Maggi 2-Minute Noodles",
+    "category": "Snacks & Biscuits",
+    "unit": "140 gm",
+    "price": 30,
+    "stock": 80,
+    "image": "https://upload.wikimedia.org/wikipedia/commons/thumb/a/a8/Maggi_noodles_in_a_bowl.jpg/640px-Maggi_noodles_in_a_bowl.jpg",
+    "id": "prod_1700000000003"
+  },
+  {
+    "name": "Dettol Original Soap",
+    "category": "Cleaning & Toiletries",
+    "unit": "125 gm",
+    "price": 55,
+    "stock": 40,
+    "image": "https://upload.wikimedia.org/wikipedia/commons/thumb/b/b5/Soap_-_blue.jpg/640px-Soap_-_blue.jpg",
+    "id": "prod_1700000000004"
+  },
+  {
+    "name": "Fortune Sunlite Refined Oil",
+    "category": "Ration & Masale",
+    "unit": "1 Liter",
+    "price": 145,
+    "stock": 30,
+    "image": "https://upload.wikimedia.org/wikipedia/commons/thumb/8/8c/Sunflower_oil_in_a_bottle.jpg/640px-Sunflower_oil_in_a_bottle.jpg",
+    "id": "prod_1700000000005"
+  }
+]
