@@ -5,17 +5,34 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>Kirana Pro Dashboard</title>
     <style>
-        body { font-family: Arial; padding: 20px; background-color: #f4f4f9; }
+        body { font-family: Arial; padding: 20px; background-color: #f4f4f9; margin: 0; }
+        #loginOverlay { position: fixed; top: 0; left: 0; width: 100%; height: 100%; background: #2c3e50; display: flex; flex-direction: column; justify-content: center; align-items: center; z-index: 1000; }
+        .login-box { background: white; padding: 30px; border-radius: 8px; text-align: center; box-shadow: 0 4px 15px rgba(0,0,0,0.2); width: 300px; }
+        .login-box input { margin-top: 15px; }
+        .login-box button { background-color: #e74c3c; margin-top: 15px; }
+        .login-box button:hover { background-color: #c0392b; }
         .container { max-width: 450px; margin: auto; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 0 10px rgba(0,0,0,0.1); }
         input, select, textarea { width: 100%; padding: 10px; margin: 10px 0; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box; }
         button { width: 100%; padding: 10px; background-color: #28a745; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 16px; margin-bottom: 20px; }
         button:hover { background-color: #218838; }
         .broadcast-btn { background-color: #007bff; }
         .broadcast-btn:hover { background-color: #0056b3; }
+        .download-btn { background-color: #ff9800; color: white; text-decoration: none; display: block; text-align: center; border-radius: 4px; padding: 10px; font-weight: bold;}
+        .download-btn:hover { background-color: #e68a00; }
         hr { border: 1px solid #eee; margin: 20px 0; }
     </style>
 </head>
 <body>
+
+    <div id="loginOverlay">
+        <div class="login-box">
+            <h2>🔒 Admin Login</h2>
+            <p>Please enter your password</p>
+            <input type="password" id="adminPwd" placeholder="Password">
+            <button onclick="checkPwd()">Login to Dashboard</button>
+        </div>
+    </div>
+
     <div class="container">
         <h2>🛒 Add New Item</h2>
         <form action="/add-product" method="POST">
@@ -29,12 +46,15 @@
                 <option value="Cleaning & Toiletries">Cleaning & Toiletries</option>
                 <option value="Others">Others</option>
             </select>
-
+            
             <label>Weight / Quantity (Unit):</label>
-            <input type="text" name="unit" placeholder="E.g. 1 kg, 500 ml, 1 Piece" required>
-
+            <input type="text" name="unit" placeholder="E.g. 1 kg, 500 ml" required>
+            
             <label>Price (in ₹):</label>
             <input type="number" name="price" placeholder="250" required>
+            
+            <label>Total Stock (Kitne items hain?):</label>
+            <input type="number" name="stock" placeholder="E.g. 50" required>
             
             <label>Product Image Link (URL):</label>
             <input type="url" name="image" placeholder="https://link-to-image.jpg" required>
@@ -43,13 +63,23 @@
         </form>
 
         <hr>
-
         <h2>📢 Broadcast Offer</h2>
         <form action="/broadcast" method="POST">
-            <label>Message for all customers:</label>
-            <textarea name="message" rows="4" placeholder="Jaise: Aaj sabhi masalon par 20% ki chhoot hai! Jaldi order karein..." required></textarea>
+            <textarea name="message" rows="4" placeholder="Jaise: Aaj 20% chhoot hai!..." required></textarea>
             <button type="submit" class="broadcast-btn">Send to All Customers 🚀</button>
         </form>
+
+        <hr>
+        <h2>📊 Store Reports</h2>
+        <a href="/download-sales" target="_blank" class="download-btn">📥 Download Sales Report (Excel)</a>
     </div>
+
+    <script>
+        function checkPwd() {
+            const pwd = document.getElementById('adminPwd').value;
+            if(pwd === 'admin123') document.getElementById('loginOverlay').style.display = 'none';
+            else alert('❌ Wrong Password! Access Denied.');
+        }
+    </script>
 </body>
 </html>
