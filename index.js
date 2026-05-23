@@ -27,9 +27,10 @@ function writeDB(file, data) {
     fs.writeFileSync(path.join(__dirname, file), JSON.stringify(data, null, 2));
 }
 
+// User memory & Registration
 function initUser(chatId) {
     if (!userStates[chatId]) {
-        userStates[chatId] = { status: 'idle', cart: [], tempAddress: '', deliveryType: '' };
+        userStates[chatId] = { status: 'idle', cart: [], tempAddress: '', deliveryType: '', tempProductId: null };
     }
     let users = readDB('users.json');
     if (!users.includes(chatId)) {
@@ -48,7 +49,7 @@ app.post('/add-product', (req, res) => {
     products.push({
         name: req.body.name, 
         category: req.body.category,
-        unit: req.body.unit || '', // NEW FIELD SAVED
+        unit: req.body.unit || '', 
         price: Number(req.body.price), 
         image: req.body.image, 
         id: `prod_${Date.now()}`
@@ -57,7 +58,6 @@ app.post('/add-product', (req, res) => {
     res.send('<h2 style="text-align:center; margin-top:50px;">✅ Item Added! <br><a href="/">Go Back</a></h2>');
 });
 
-// Broadcast Route
 app.post('/broadcast', (req, res) => {
     const message = `📢 SPECIAL OFFER 📢\n\n${req.body.message}`;
     const users = readDB('users.json');
@@ -69,7 +69,7 @@ app.post('/broadcast', (req, res) => {
     res.send(`<h2 style="text-align:center; margin-top:50px;">✅ Message sent to ${users.length} customers! <br><a href="/">Go Back</a></h2>`);
 });
 
-// Print Bill Route
+// Print Bill Route (Updated with Quantity)
 app.get('/print-bill/:orderId', (req, res) => {
     const orders = readDB('orders.json');
     const order = orders.find(o => o.id === req.params.orderId);
@@ -84,19 +84,30 @@ app.get('/print-bill/:orderId', (req, res) => {
         <b>Customer Info:</b> ${order.customer_details}<br>
         <b>Type:</b> ${order.delivery_type} | <b>Payment:</b> ${order.payment_mode}</p>
         <hr>
-        <table style="width: 100%; text-align: left;">
-            <tr><th>Item</th><th>Price</th></tr>`;
+        <table style="width: 100%; text-align: left; border-collapse: collapse;">
+            <tr>
+                <th style="border-bottom: 1px solid #eee; padding-bottom: 5px;">Item</th>
+                <th style="border-bottom: 1px solid #eee; padding-bottom: 5px;">Qty</th>
+                <th style="border-bottom: 1px solid #eee; padding-bottom: 5px;">Price</th>
+                <th style="border-bottom: 1px solid #eee; padding-bottom: 5px;">Total</th>
+            </tr>`;
             
     order.items.forEach(item => { 
-        // Add Unit to Bill
         const itemUnit = item.unit ? ` (${item.unit})` : '';
-        html += `<tr><td>${item.name}${itemUnit}</td><td>₹${item.price}</td></tr>`; 
+        const itemTotal = item.price * item.qty;
+        html += `
+            <tr>
+                <td style="padding: 5px 0;">${item.name}${itemUnit}</td>
+                <td style="padding: 5px 0;">${item.qty}</td>
+                <td style="padding: 5px 0;">₹${item.price}</td>
+                <td style="padding: 5px 0;">₹${itemTotal}</td>
+            </tr>`; 
     });
     
     html += `
         </table>
         <hr>
-        <h3 style="text-align: right;">Total: ₹${order.total}</h3>
+        <h3 style="text-align: right;">Grand Total: ₹${order.total}</h3>
         <button onclick="window.print()" style="width: 100%; padding: 10px; background: black; color: white; cursor: pointer;">🖨️ PRINT BILL</button>
     </div>`;
     res.send(html);
@@ -113,11 +124,41 @@ bot.on('message', (msg) => {
     const text = msg.text;
     initUser(chatId);
 
+    // 1. Handling Quantity Input
+    if (userStates[chatId].status === 'waiting_for_quantity') {
+        const qty = parseInt(text);
+        
+        if (isNaN(qty) || qty <= 0) {
+            bot.sendMessage(chatId, "Please enter a valid number (e.g., 1, 2, 3):");
+            return;
+        }
+
+        const product = readDB('products.json').find(p => p.id === userStates[chatId].tempProductId);
+        if (product) {
+            // Check if product is already in the cart
+            const existingItem = userStates[chatId].cart.find(p => p.id === product.id);
+            if (existingItem) {
+                existingItem.qty += qty;
+            } else {
+                userStates[chatId].cart.push({ ...product, qty: qty });
+            }
+
+            bot.sendMessage(chatId, `✅ Added ${qty} x ${product.name} to your cart!`, {
+                reply_markup: { inline_keyboard: [[{ text: '🛒 View Cart & Checkout', callback_data: 'view_cart' }]] }
+            });
+        }
+        
+        userStates[chatId].status = 'idle';
+        userStates[chatId].tempProductId = null;
+        return;
+    }
+
+    // 2. Handling Address/Name Input
     if (userStates[chatId].status === 'waiting_for_address' || userStates[chatId].status === 'waiting_for_pickup_name') {
         userStates[chatId].tempAddress = text;
         userStates[chatId].status = 'waiting_for_payment';
         
-        let total = userStates[chatId].cart.reduce((sum, p) => sum + p.price, 0);
+        let total = userStates[chatId].cart.reduce((sum, p) => sum + (p.price * p.qty), 0);
         
         bot.sendMessage(chatId, `Your total bill is: ₹${total}\nPlease choose your payment method:`, {
             reply_markup: {
@@ -130,6 +171,7 @@ bot.on('message', (msg) => {
         return;
     }
 
+    // Main Menu
     if (text === '/start') {
         bot.sendMessage(chatId, `Welcome to ${myStoreName}! 🌾\nWhat would you like to browse today?`, {
             reply_markup: {
@@ -166,14 +208,15 @@ bot.on('callback_query', (query) => {
             });
         });
     }
+    // TRIGGER QUANTITY QUESTION
     else if (data.startsWith('add_')) {
         const productId = data.replace('add_', '');
         const product = readDB('products.json').find(p => p.id === productId);
+        
         if (product) {
-            userStates[chatId].cart.push(product);
-            bot.sendMessage(chatId, `✅ ${product.name} has been added to your cart!`, {
-                reply_markup: { inline_keyboard: [[{ text: '🛒 View Cart & Checkout', callback_data: 'view_cart' }]] }
-            });
+            userStates[chatId].tempProductId = productId;
+            userStates[chatId].status = 'waiting_for_quantity';
+            bot.sendMessage(chatId, `How many units of ${product.name} do you want?\n(Please type a number, e.g., 1, 2, 5)`);
         }
     }
     else if (data === 'view_cart') {
@@ -182,12 +225,15 @@ bot.on('callback_query', (query) => {
 
         let billText = "🛒 Your Cart:\n\n";
         let total = 0;
+        
         cart.forEach(p => { 
             const itemUnit = p.unit ? ` (${p.unit})` : '';
-            billText += `- ${p.name}${itemUnit} (₹${p.price})\n`; 
-            total += p.price; 
+            const itemTotal = p.price * p.qty;
+            billText += `- ${p.name}${itemUnit} x ${p.qty} = ₹${itemTotal}\n`; 
+            total += itemTotal; 
         });
-        billText += `\n💰 Total Amount: ₹${total}\n\nHow would you like to receive your order?`;
+        
+        billText += `\n💰 Grand Total: ₹${total}\n\nHow would you like to receive your order?`;
 
         bot.sendMessage(chatId, billText, {
             reply_markup: {
@@ -209,8 +255,9 @@ bot.on('callback_query', (query) => {
         bot.sendMessage(chatId, "Please send your Name and Phone Number:");
     }
     
+    // PAYMENT LOGIC & ORDER COMPLETE
     else if (data === 'pay_upi' || data === 'pay_cash') {
-        let total = userStates[chatId].cart.reduce((sum, p) => sum + p.price, 0);
+        let total = userStates[chatId].cart.reduce((sum, p) => sum + (p.price * p.qty), 0);
         let orderId = `ORD_${Date.now()}`;
         let paymentMode = data === 'pay_upi' ? 'UPI' : 'Cash';
         
@@ -234,9 +281,7 @@ bot.on('callback_query', (query) => {
         }
 
         const printUrl = `https://mystore-bot-live.onrender.com/print-bill/${orderId}`; 
-        
         const adminAlert = `🚨 NEW ORDER RECEIVED 🚨\n\n👤 Name/Address: ${userStates[chatId].tempAddress}\n🚚 Mode: ${userStates[chatId].deliveryType}\n💰 Payment: ${paymentMode} (₹${total})\n\n🖨️ Print Bill Here:\n${printUrl}`;
-        
         bot.sendMessage(adminChatId, adminAlert);
 
         userStates[chatId].cart = []; 
