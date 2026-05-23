@@ -10,12 +10,13 @@ const myUpiId = 'ar844042@okicici';
 const myStoreName = 'My Kirana Store';
 const myBotUsername = 'TheSmartSeller_store'; 
 
-// WEBHOOK CONFIGURATION FOR RENDER
+// DYNAMIC PORT SETUP FOR RENDER
+const PORT = process.env.PORT || 3000;
 const app = express();
 app.use(express.json());
 app.use(express.urlencoded({ extended: true }));
 
-const bot = new TelegramBot(token, { webHook: { port: process.env.PORT || 3000 } });
+const bot = new TelegramBot(token, { webHook: { port: PORT } });
 bot.setWebHook(`https://mystore-bot-live.onrender.com/bot${token}`);
 
 app.post(`/bot${token}`, (req, res) => {
@@ -41,27 +42,7 @@ function initUser(chatId) {
     }
 }
 
-function isStoreOpen() {
-    let hour = new Date().toLocaleString("en-US", {timeZone: "Asia/Kolkata", hour: 'numeric', hour12: false});
-    return parseInt(hour) >= 8 && parseInt(hour) < 22;
-}
-
-function sendPaymentOptions(chatId) {
-    let itemsTotal = userStates[chatId].cart.reduce((sum, p) => sum + (p.price * p.qty), 0);
-    let deliveryFee = (userStates[chatId].deliveryType === 'Home Delivery' && itemsTotal < 500) ? 30 : 0;
-    let total = itemsTotal + deliveryFee - userStates[chatId].discount;
-    let walletDeduction = userStates[chatId].walletUsed >= total ? total : userStates[chatId].walletUsed;
-    total = total - walletDeduction;
-    
-    userStates[chatId].finalTotal = total; 
-    userStates[chatId].deliveryFee = deliveryFee;
-    userStates[chatId].walletDeduction = walletDeduction;
-
-    let msgText = `🛍️ Items Total: ₹${itemsTotal}\n🚚 Delivery: ₹${deliveryFee}\n🏷️ Discount: -₹${userStates[chatId].discount}\n🪙 Wallet Used: -₹${walletDeduction}\n\n💰 **Grand Total: ₹${total}**\n\nChoose payment:`;
-    bot.sendMessage(chatId, msgText, { parse_mode: 'Markdown', reply_markup: { inline_keyboard: [[{ text: '📱 UPI', callback_data: 'pay_upi' }], [{ text: '💵 Cash', callback_data: 'pay_cash' }]] } });
-}
-
-// --- ROUTES ---
+// --- SERVER ROUTES ---
 app.get('/', (req, res) => res.sendFile(path.join(__dirname, 'dashboard.html')));
 app.get('/rider', (req, res) => res.sendFile(path.join(__dirname, 'rider.html')));
 app.get('/api/rider-orders', (req, res) => res.json(readDB('orders.json').filter(o => o.status === 'PACKED' || o.status === 'OUT')));
@@ -71,16 +52,9 @@ app.post('/api/mark-delivered/:orderId', (req, res) => {
     let idx = orders.findIndex(o => o.id === req.params.orderId);
     if(idx !== -1) {
         orders[idx].status = 'DELIVERED'; writeDB('orders.json', orders);
-        bot.sendMessage(orders[idx].chatId, `✅ Order ${orders[idx].id} delivered!`);
+        bot.sendMessage(orders[idx].chatId, `✅ Aapka order (ID: ${orders[idx].id}) successfully deliver ho gaya hai!`);
         res.json({success: true});
     }
-});
-
-app.post('/add-product', (req, res) => {
-    let products = readDB('products.json');
-    products.push({ name: req.body.name, category: req.body.category, unit: req.body.unit, price: Number(req.body.price), stock: Number(req.body.stock), image: req.body.image, id: `prod_${Date.now()}` });
-    writeDB('products.json', products);
-    res.send('<h2>✅ Added! <a href="/">Go Back</a></h2>');
 });
 
 // --- BOT LOGIC ---
@@ -88,9 +62,10 @@ bot.on('message', (msg) => {
     const chatId = msg.chat.id;
     initUser(chatId);
     if(msg.text === '/start') {
-        bot.sendMessage(chatId, `Welcome to ${myStoreName}!`, { reply_markup: { inline_keyboard: [[{ text: '🛍️ Browse', callback_data: 'browse_categories' }], [{ text: '🛒 Cart', callback_data: 'view_cart' }]] } });
+        bot.sendMessage(chatId, `Welcome to ${myStoreName}! 🌾`, { reply_markup: { inline_keyboard: [[{ text: '🛍️ Browse', callback_data: 'browse_categories' }], [{ text: '🛒 Cart', callback_data: 'view_cart' }]] } });
     }
-    // ... (rest of your existing logic remains same here) ...
 });
 
-app.listen(process.env.PORT || 3000, () => console.log("Final System Live!"));
+app.listen(PORT, '0.0.0.0', () => {
+    console.log(`Server is running on port ${PORT}`);
+});
