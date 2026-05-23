@@ -1,0 +1,21 @@
+{
+  "name": "storebot",
+  "version": "1.0.0",
+  "description": "Telegram E-commerce Bot with Web Dashboard",
+  "main": "index.js",
+  "scripts": {
+    "start": "node index.js",
+    "test": "echo \"Error: no test specified\" && exit 1"
+  },
+  "keywords": [
+    "telegram-bot",
+    "ecommerce",
+    "nodejs"
+  ],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "express": "^4.19.2",
+    "node-telegram-bot-api": "^0.66.0"
+  }
+}
