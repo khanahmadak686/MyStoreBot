@@ -1,7 +1,7 @@
 const TelegramBot = require('node-telegram-bot-api');
 const express = require('express');
 const path = require('path');
-const fs = require('fs'); // File system module database ke liye
+const fs = require('fs');
 
 // --- BOT CREDENTIALS ---
 const token = '8998018950:AAECsgWiq5cSLYyh63MC2lqRmKw2a8-TzTU';
@@ -18,7 +18,6 @@ const userStates = {};
 // ==========================================
 const dbPath = path.join(__dirname, 'products.json');
 
-// Function to read products from file
 function getProducts() {
     if (fs.existsSync(dbPath)) {
         const data = fs.readFileSync(dbPath, 'utf8');
@@ -27,7 +26,6 @@ function getProducts() {
     return [];
 }
 
-// Function to save products to file
 function saveProducts(productsArray) {
     fs.writeFileSync(dbPath, JSON.stringify(productsArray, null, 2));
 }
@@ -41,7 +39,7 @@ app.get('/', (req, res) => {
 });
 
 app.post('/add-product', (req, res) => {
-    const products = getProducts(); // Database se purane products laayein
+    const products = getProducts();
 
     const newProduct = {
         name: req.body.name,
@@ -51,7 +49,7 @@ app.post('/add-product', (req, res) => {
     };
     
     products.push(newProduct); 
-    saveProducts(products); // Naya product database mein permanently save karein
+    saveProducts(products); 
     
     console.log("New Product Added & Saved to DB:", newProduct.name);
     
@@ -76,12 +74,22 @@ bot.on('message', (msg) => {
 
     if (userStates[chatId] && userStates[chatId].status === 'waiting_for_address') {
         const productId = userStates[chatId].productId;
+        
+        // 🛠️ FIX: Database se product ki details nikalna
+        const products = getProducts();
+        const orderedProduct = products.find(p => p.id === productId);
+        
+        const productName = orderedProduct ? orderedProduct.name : "Unknown Product";
+        const productPrice = orderedProduct ? orderedProduct.price : "N/A";
+
         const customerName = msg.from.first_name || "Customer";
         const username = msg.from.username ? `@${msg.from.username}` : "No username";
         
         bot.sendMessage(chatId, "🎉 Congratulations! Your order has been successfully placed.\nOur team will contact you shortly!");
         
-        const adminAlert = `🚨 NEW ORDER RECEIVED! 🚨\n\n👤 Customer: ${customerName} (${username})\n📦 Product ID: ${productId}\n📍 Address/Details: ${text}`;
+        // 🛠️ FIX: Admin Alert mein Product ka Naam aur Price add kiya
+        const adminAlert = `🚨 NEW ORDER RECEIVED! 🚨\n\n👤 Customer: ${customerName} (${username})\n📦 Product: ${productName}\n💰 Price: ₹${productPrice}\n📍 Address/Details: ${text}`;
+        
         bot.sendMessage(adminChatId, adminAlert);
         
         delete userStates[chatId];
@@ -106,7 +114,7 @@ bot.on('callback_query', (query) => {
     const data = query.data; 
 
     if (data === 'show_catalog') {
-        const products = getProducts(); // Show products directly from database
+        const products = getProducts();
 
         if (products.length === 0) {
             bot.sendMessage(chatId, "Oops! Currently, there are no products in our store. Please check back later.");
@@ -129,7 +137,8 @@ bot.on('callback_query', (query) => {
         bot.sendMessage(chatId, "You can email us at: support@mystore.com");
     }
     else if (data.startsWith('buy_')) {
-        const productId = data.split('_')[1]; 
+        // 🛠️ FIX: Product ID sahi se nikalne ke liye replace use kiya
+        const productId = data.replace('buy_', ''); 
         userStates[chatId] = { status: 'waiting_for_address', productId: productId };
         bot.sendMessage(chatId, "Great choice! 🤩\nPlease send your Full Name, Delivery Address, and Phone Number in a single message:");
     }
