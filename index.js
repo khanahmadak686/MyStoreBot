@@ -231,7 +231,7 @@ bot.on('callback_query', (query) => {
         }
 
         // 3. Send Alert & Print Link to Admin
-        const printUrl = `http://localhost:3000/print-bill/${orderId}`; // Render par ise cloud link maan liya jayega
+        const printUrl = `https://mystore-bot-live.onrender.com/print-bill/${orderId}`; // Render par ise cloud link maan liya jayega
         const adminAlert = `🚨 NAYA ORDER AAYA HAI 🚨\n\n👤 Name/Address: ${userStates[chatId].tempAddress}\n🚚 Mode: ${userStates[chatId].deliveryType}\n💰 Payment: ${paymentMode} (₹${total})\n\n🖨️ **Bill Print Karein:**\n${printUrl}`;
         
         bot.sendMessage(adminChatId, adminAlert, {parse_mode: 'Markdown'});
