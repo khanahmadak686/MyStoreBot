@@ -3,18 +3,21 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Kirana Seller Dashboard</title>
+    <title>Kirana Pro Dashboard</title>
     <style>
         body { font-family: Arial; padding: 20px; background-color: #f4f4f9; }
-        .container { max-width: 400px; margin: auto; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 0 10px rgba(0,0,0,0.1); }
-        input, select { width: 100%; padding: 10px; margin: 10px 0; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box; }
-        button { width: 100%; padding: 10px; background-color: #28a745; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 16px; }
+        .container { max-width: 450px; margin: auto; background: white; padding: 20px; border-radius: 8px; box-shadow: 0 0 10px rgba(0,0,0,0.1); }
+        input, select, textarea { width: 100%; padding: 10px; margin: 10px 0; border: 1px solid #ccc; border-radius: 4px; box-sizing: border-box; }
+        button { width: 100%; padding: 10px; background-color: #28a745; color: white; border: none; border-radius: 4px; cursor: pointer; font-size: 16px; margin-bottom: 20px; }
         button:hover { background-color: #218838; }
+        .broadcast-btn { background-color: #007bff; }
+        .broadcast-btn:hover { background-color: #0056b3; }
+        hr { border: 1px solid #eee; margin: 20px 0; }
     </style>
 </head>
 <body>
     <div class="container">
-        <h2>🛒 Kirana Store Dashboard</h2>
+        <h2>🛒 Add New Item</h2>
         <form action="/add-product" method="POST">
             <label>Product Name:</label>
             <input type="text" name="name" placeholder="E.g. Aashirvaad Atta 5kg" required>
@@ -34,6 +37,15 @@
             <input type="url" name="image" placeholder="https://link-to-image.jpg" required>
             
             <button type="submit">Upload Product</button>
+        </form>
+
+        <hr>
+
+        <h2>📢 Broadcast Offer</h2>
+        <form action="/broadcast" method="POST">
+            <label>Message for all customers:</label>
+            <textarea name="message" rows="4" placeholder="Jaise: Aaj sabhi masalon par 20% ki chhoot hai! Jaldi order karein..." required></textarea>
+            <button type="submit" class="broadcast-btn">Send to All Customers 🚀</button>
         </form>
     </div>
 </body>

@@ -3,9 +3,11 @@ const express = require('express');
 const path = require('path');
 const fs = require('fs');
 
-// --- BOT CREDENTIALS ---
+// --- CREDENTIALS & SETTINGS ---
 const token = '8998018950:AAECsgWiq5cSLYyh63MC2lqRmKw2a8-TzTU';
 const adminChatId = '1703328653'; 
+const myUpiId = 'ar844042@okicici'; // 🛠️ YAHAN APNA UPI ID DAALEIN
+const myStoreName = 'Apna Kirana Store';
 
 const bot = new TelegramBot(token, {polling: true});
 const app = express();
@@ -14,50 +16,87 @@ app.use(express.urlencoded({ extended: true }));
 const userStates = {};
 
 // ==========================================
-// 🗄️ DATABASE SETUP
+// 🗄️ DATABASE HELPERS
 // ==========================================
-const dbPath = path.join(__dirname, 'products.json');
-
-function getProducts() {
-    if (fs.existsSync(dbPath)) {
-        return JSON.parse(fs.readFileSync(dbPath, 'utf8'));
-    }
+function readDB(file) {
+    const dbPath = path.join(__dirname, file);
+    if (fs.existsSync(dbPath)) return JSON.parse(fs.readFileSync(dbPath, 'utf8'));
     return [];
 }
-
-function saveProducts(productsArray) {
-    fs.writeFileSync(dbPath, JSON.stringify(productsArray, null, 2));
+function writeDB(file, data) {
+    fs.writeFileSync(path.join(__dirname, file), JSON.stringify(data, null, 2));
 }
 
-// Ensure user memory exists
+// User memory & Registration
 function initUser(chatId) {
     if (!userStates[chatId]) {
-        userStates[chatId] = { status: 'idle', cart: [] };
+        userStates[chatId] = { status: 'idle', cart: [], tempAddress: '', deliveryType: '' };
+    }
+    // Naye user ka ID save karna (Broadcast ke liye)
+    let users = readDB('users.json');
+    if (!users.includes(chatId)) {
+        users.push(chatId);
+        writeDB('users.json', users);
     }
 }
 
 // ==========================================
-// 🌐 WEB DASHBOARD
+// 🌐 WEB DASHBOARD & ROUTES
 // ==========================================
-app.get('/', (req, res) => {
-    res.sendFile(path.join(__dirname, 'dashboard.html'));
-});
+app.get('/', (req, res) => res.sendFile(path.join(__dirname, 'dashboard.html')));
 
 app.post('/add-product', (req, res) => {
-    const products = getProducts();
-    const newProduct = {
-        name: req.body.name,
-        category: req.body.category,
-        price: Number(req.body.price),
-        image: req.body.image,
-        id: `prod_${Date.now()}` 
-    };
-    products.push(newProduct); 
-    saveProducts(products); 
-    res.send('<div style="text-align:center; margin-top:50px; font-family:Arial;"><h2>✅ Kirana Item Added!</h2><a href="/" style="text-decoration:none; color:blue;">Go Back</a></div>');
+    let products = readDB('products.json');
+    products.push({
+        name: req.body.name, category: req.body.category,
+        price: Number(req.body.price), image: req.body.image, id: `prod_${Date.now()}`
+    });
+    writeDB('products.json', products);
+    res.send('<h2 style="text-align:center; margin-top:50px;">✅ Item Added! <br><a href="/">Go Back</a></h2>');
 });
 
-app.listen(3000, () => console.log("Kirana System is Live on port 3000!"));
+// Broadcast Route
+app.post('/broadcast', (req, res) => {
+    const message = `📢 **SPECIAL OFFER** 📢\n\n${req.body.message}`;
+    const users = readDB('users.json');
+    
+    users.forEach(userId => {
+        bot.sendMessage(userId, message, {parse_mode: 'Markdown'}).catch(err => console.log("User blocked bot"));
+    });
+    
+    res.send(`<h2 style="text-align:center; margin-top:50px;">✅ Message sent to ${users.length} customers! <br><a href="/">Go Back</a></h2>`);
+});
+
+// Print Bill Route
+app.get('/print-bill/:orderId', (req, res) => {
+    const orders = readDB('orders.json');
+    const order = orders.find(o => o.id === req.params.orderId);
+    
+    if(!order) return res.send("Order not found!");
+    
+    let html = `
+    <div style="font-family: Arial; max-width: 400px; margin: auto; padding: 20px; border: 1px solid #ccc;">
+        <h2 style="text-align: center;">${myStoreName} - Receipt</h2>
+        <p><b>Order ID:</b> ${order.id}<br>
+        <b>Date:</b> ${order.date}<br>
+        <b>Customer Info:</b> ${order.customer_details}<br>
+        <b>Type:</b> ${order.delivery_type} | <b>Payment:</b> ${order.payment_mode}</p>
+        <hr>
+        <table style="width: 100%; text-align: left;">
+            <tr><th>Item</th><th>Price</th></tr>`;
+            
+    order.items.forEach(item => { html += `<tr><td>${item.name}</td><td>₹${item.price}</td></tr>`; });
+    
+    html += `
+        </table>
+        <hr>
+        <h3 style="text-align: right;">Total: ₹${order.total}</h3>
+        <button onclick="window.print()" style="width: 100%; padding: 10px; background: black; color: white; cursor: pointer;">🖨️ PRINT BILL</button>
+    </div>`;
+    res.send(html);
+});
+
+app.listen(3000, () => console.log("Pro System Live on port 3000!"));
 
 // ==========================================
 // 🤖 TELEGRAM BOT LOGIC
@@ -68,66 +107,35 @@ bot.on('message', (msg) => {
     const text = msg.text;
     initUser(chatId);
 
-    const customerName = msg.from.first_name || "Customer";
-    const username = msg.from.username ? `@${msg.from.username}` : "N/A";
-
-    // 1. Handling Parchi (Direct List)
-    if (userStates[chatId].status === 'waiting_for_list') {
-        bot.sendMessage(chatId, "✅ Aapki parchi humein mil gayi hai! Hum jaldi hi iska bill aur delivery time aapko batayenge.");
-        const alert = `🚨 NAYI PARCHI AAYI HAI 🚨\n\n👤 Customer: ${customerName} (${username})\n📝 Items List:\n${text}`;
-        bot.sendMessage(adminChatId, alert);
-        userStates[chatId].status = 'idle';
-        return;
-    }
-
-    // 2. Handling Delivery Address (Checkout)
-    if (userStates[chatId].status === 'waiting_for_address') {
-        let orderDetails = "";
-        let total = 0;
-        userStates[chatId].cart.forEach(p => {
-            orderDetails += `- ${p.name} (₹${p.price})\n`;
-            total += p.price;
-        });
-
-        bot.sendMessage(chatId, `🎉 Order Confirmed!\n\nAapka Total Bill: ₹${total}\nHumara delivery boy jaldi hi aapke address par hoga.`);
-        const alert = `🚨 NAYA HOME DELIVERY ORDER 🚨\n\n👤 Customer: ${customerName} (${username})\n📍 Address: ${text}\n\n🛒 Cart Items:\n${orderDetails}\n💰 Total Bill: ₹${total}`;
-        bot.sendMessage(adminChatId, alert);
+    // Handling Address/Name Input
+    if (userStates[chatId].status === 'waiting_for_address' || userStates[chatId].status === 'waiting_for_pickup_name') {
+        userStates[chatId].tempAddress = text;
+        userStates[chatId].status = 'waiting_for_payment';
         
-        userStates[chatId].cart = []; 
-        userStates[chatId].status = 'idle';
-        return;
-    }
-
-    // 3. Handling Store Pickup
-    if (userStates[chatId].status === 'waiting_for_pickup_name') {
-        let orderDetails = "";
-        let total = 0;
-        userStates[chatId].cart.forEach(p => {
-            orderDetails += `- ${p.name} (₹${p.price})\n`;
-            total += p.price;
-        });
-
-        bot.sendMessage(chatId, `🎉 Order Confirmed!\n\nAapka Total Bill: ₹${total}\nAap apna order dukan se pick kar sakte hain.`);
-        const alert = `🚨 NAYA STORE PICKUP ORDER 🚨\n\n👤 Customer: ${text} (${username})\n\n🛒 Cart Items:\n${orderDetails}\n💰 Total Bill: ₹${total}`;
-        bot.sendMessage(adminChatId, alert);
+        let total = userStates[chatId].cart.reduce((sum, p) => sum + p.price, 0);
         
-        userStates[chatId].cart = []; 
-        userStates[chatId].status = 'idle';
+        bot.sendMessage(chatId, `Aapka total bill hai: **₹${total}**\nKripya apna payment method chunein:`, {
+            parse_mode: 'Markdown',
+            reply_markup: {
+                inline_keyboard: [
+                    [{ text: '📱 Pay via UPI (Online)', callback_data: 'pay_upi' }],
+                    [{ text: '💵 Cash / Pay at Store', callback_data: 'pay_cash' }]
+                ]
+            }
+        });
         return;
     }
 
     // Main Menu
     if (text === '/start') {
-        const menuOptions = {
+        bot.sendMessage(chatId, `Welcome to ${myStoreName}! 🌾\nKya dekhna pasand karenge?`, {
             reply_markup: {
                 inline_keyboard: [
                     [{ text: '🛍️ Browse Categories', callback_data: 'browse_categories' }],
-                    [{ text: '📝 Send Grocery List (Parchi)', callback_data: 'send_list' }],
                     [{ text: `🛒 View Cart (${userStates[chatId].cart.length} items)`, callback_data: 'view_cart' }]
                 ]
             }
-        };
-        bot.sendMessage(chatId, "Welcome to our Kirana Store! 🌾\nAap items browse kar sakte hain ya seedha parchi bhej sakte hain:", menuOptions);
+        });
     }
 });
 
@@ -135,21 +143,19 @@ bot.on('callback_query', (query) => {
     const chatId = query.message.chat.id;
     const data = query.data; 
     initUser(chatId);
+    const customerName = query.from.first_name || "Customer";
 
     if (data === 'browse_categories') {
-        const products = getProducts();
+        const products = readDB('products.json');
         if (products.length === 0) return bot.sendMessage(chatId, "Store is empty right now.");
 
         const categories = [...new Set(products.map(p => p.category))];
         const categoryButtons = categories.map(cat => [{ text: `📂 ${cat}`, callback_data: `cat_${cat}` }]);
-        
         bot.sendMessage(chatId, "Category choose karein:", { reply_markup: { inline_keyboard: categoryButtons } });
     } 
     else if (data.startsWith('cat_')) {
         const categoryName = data.replace('cat_', '');
-        const products = getProducts().filter(p => p.category === categoryName);
-        
-        bot.sendMessage(chatId, `Showing products for: ${categoryName}`);
+        const products = readDB('products.json').filter(p => p.category === categoryName);
         products.forEach(product => {
             bot.sendPhoto(chatId, product.image, {
                 caption: `📦 ${product.name}\n💰 Price: ₹${product.price}`,
@@ -159,10 +165,10 @@ bot.on('callback_query', (query) => {
     }
     else if (data.startsWith('add_')) {
         const productId = data.replace('add_', '');
-        const product = getProducts().find(p => p.id === productId);
+        const product = readDB('products.json').find(p => p.id === productId);
         if (product) {
             userStates[chatId].cart.push(product);
-            bot.sendMessage(chatId, `✅ ${product.name} cart mein add ho gaya! (Total Items: ${userStates[chatId].cart.length})`, {
+            bot.sendMessage(chatId, `✅ ${product.name} cart mein add ho gaya!`, {
                 reply_markup: { inline_keyboard: [[{ text: '🛒 View Cart & Checkout', callback_data: 'view_cart' }]] }
             });
         }
@@ -174,7 +180,7 @@ bot.on('callback_query', (query) => {
         let billText = "🛒 Aapka Cart:\n\n";
         let total = 0;
         cart.forEach(p => { billText += `- ${p.name} (₹${p.price})\n`; total += p.price; });
-        billText += `\n💰 Total Amount: ₹${total}\n\nAap apna order kaise chahte hain?`;
+        billText += `\n💰 Total Amount: ₹${total}\n\nOrder kaise lenge?`;
 
         bot.sendMessage(chatId, billText, {
             reply_markup: {
@@ -186,15 +192,52 @@ bot.on('callback_query', (query) => {
         });
     }
     else if (data === 'checkout_delivery') {
+        userStates[chatId].deliveryType = 'Home Delivery';
         userStates[chatId].status = 'waiting_for_address';
         bot.sendMessage(chatId, "Kripya apna poora Name, Address aur Phone Number bhejein:");
     }
     else if (data === 'checkout_pickup') {
+        userStates[chatId].deliveryType = 'Store Pickup';
         userStates[chatId].status = 'waiting_for_pickup_name';
-        bot.sendMessage(chatId, "Kripya apna Name aur Phone Number bhejein taaki hum order pack karke rakh sakein:");
+        bot.sendMessage(chatId, "Kripya apna Name aur Phone Number bhejein:");
     }
-    else if (data === 'send_list') {
-        userStates[chatId].status = 'waiting_for_list';
-        bot.sendMessage(chatId, "📝 Apni poori grocery list (Parchi) ek hi message mein type karke bhejein:");
+    
+    // PAYMENT LOGIC & ORDER COMPLETE
+    else if (data === 'pay_upi' || data === 'pay_cash') {
+        let total = userStates[chatId].cart.reduce((sum, p) => sum + p.price, 0);
+        let orderId = `ORD_${Date.now()}`;
+        let paymentMode = data === 'pay_upi' ? 'UPI' : 'Cash';
+        
+        // 1. Save Order to Database
+        let orders = readDB('orders.json');
+        orders.push({
+            id: orderId,
+            date: new Date().toLocaleString(),
+            customer_details: userStates[chatId].tempAddress,
+            delivery_type: userStates[chatId].deliveryType,
+            payment_mode: paymentMode,
+            items: userStates[chatId].cart,
+            total: total
+        });
+        writeDB('orders.json', orders);
+
+        // 2. Send Message to Customer
+        if (paymentMode === 'UPI') {
+            // UPI Deep Link Generate karna
+            const upiLink = `upi://pay?pa=${myUpiId}&pn=${myStoreName.replace(/ /g, '%20')}&am=${total}`;
+            bot.sendMessage(chatId, `🎉 Order Saved! (ID: ${orderId})\n\nKripya is link par click karke ₹${total} pay karein:\n${upiLink}\n\n*(Payment ke baad screenshot bhejna na bhoolein)*`);
+        } else {
+            bot.sendMessage(chatId, `🎉 Order Confirmed! (ID: ${orderId})\nHum jaldi hi order pack karenge. Cash ready rakhein!`);
+        }
+
+        // 3. Send Alert & Print Link to Admin
+        const printUrl = `http://localhost:3000/print-bill/${orderId}`; // Render par ise cloud link maan liya jayega
+        const adminAlert = `🚨 NAYA ORDER AAYA HAI 🚨\n\n👤 Name/Address: ${userStates[chatId].tempAddress}\n🚚 Mode: ${userStates[chatId].deliveryType}\n💰 Payment: ${paymentMode} (₹${total})\n\n🖨️ **Bill Print Karein:**\n${printUrl}`;
+        
+        bot.sendMessage(adminChatId, adminAlert, {parse_mode: 'Markdown'});
+
+        // 4. Clear Cart
+        userStates[chatId].cart = []; 
+        userStates[chatId].status = 'idle';
     }
 });
