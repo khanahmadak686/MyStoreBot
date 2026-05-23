@@ -27,7 +27,6 @@ function writeDB(file, data) {
     fs.writeFileSync(path.join(__dirname, file), JSON.stringify(data, null, 2));
 }
 
-// User memory & Registration
 function initUser(chatId) {
     if (!userStates[chatId]) {
         userStates[chatId] = { status: 'idle', cart: [], tempAddress: '', deliveryType: '', tempProductId: null };
@@ -61,19 +60,15 @@ app.post('/add-product', (req, res) => {
 app.post('/broadcast', (req, res) => {
     const message = `📢 SPECIAL OFFER 📢\n\n${req.body.message}`;
     const users = readDB('users.json');
-    
     users.forEach(userId => {
         bot.sendMessage(userId, message).catch(err => console.log("User blocked bot"));
     });
-    
     res.send(`<h2 style="text-align:center; margin-top:50px;">✅ Message sent to ${users.length} customers! <br><a href="/">Go Back</a></h2>`);
 });
 
-// Print Bill Route (Updated with Quantity)
 app.get('/print-bill/:orderId', (req, res) => {
     const orders = readDB('orders.json');
     const order = orders.find(o => o.id === req.params.orderId);
-    
     if(!order) return res.send("Order not found!");
     
     let html = `
@@ -124,42 +119,56 @@ bot.on('message', (msg) => {
     const text = msg.text;
     initUser(chatId);
 
-    // 1. Handling Quantity Input
+    // 1. Handling Product Search (NEW)
+    if (userStates[chatId].status === 'waiting_for_search') {
+        const keyword = text.toLowerCase();
+        const products = readDB('products.json');
+        const results = products.filter(p => p.name.toLowerCase().includes(keyword) || p.category.toLowerCase().includes(keyword));
+
+        if (results.length === 0) {
+            bot.sendMessage(chatId, "No products found for your search. Please try another keyword or browse categories.");
+        } else {
+            bot.sendMessage(chatId, `🔍 Found ${results.length} products for "${text}":`);
+            results.forEach(product => {
+                const productUnit = product.unit ? ` (${product.unit})` : '';
+                bot.sendPhoto(chatId, product.image, {
+                    caption: `📦 ${product.name}${productUnit}\n💰 Price: ₹${product.price}`,
+                    reply_markup: { inline_keyboard: [[{ text: '➕ Add to Cart', callback_data: `add_${product.id}` }]] }
+                });
+            });
+        }
+        userStates[chatId].status = 'idle';
+        return;
+    }
+
+    // 2. Handling Quantity Input
     if (userStates[chatId].status === 'waiting_for_quantity') {
         const qty = parseInt(text);
-        
-        if (isNaN(qty) || qty <= 0) {
-            bot.sendMessage(chatId, "Please enter a valid number (e.g., 1, 2, 3):");
-            return;
-        }
+        if (isNaN(qty) || qty <= 0) return bot.sendMessage(chatId, "Please enter a valid number (e.g., 1, 2, 3):");
 
         const product = readDB('products.json').find(p => p.id === userStates[chatId].tempProductId);
         if (product) {
-            // Check if product is already in the cart
             const existingItem = userStates[chatId].cart.find(p => p.id === product.id);
             if (existingItem) {
                 existingItem.qty += qty;
             } else {
                 userStates[chatId].cart.push({ ...product, qty: qty });
             }
-
             bot.sendMessage(chatId, `✅ Added ${qty} x ${product.name} to your cart!`, {
                 reply_markup: { inline_keyboard: [[{ text: '🛒 View Cart & Checkout', callback_data: 'view_cart' }]] }
             });
         }
-        
         userStates[chatId].status = 'idle';
         userStates[chatId].tempProductId = null;
         return;
     }
 
-    // 2. Handling Address/Name Input
+    // 3. Handling Address/Name Input
     if (userStates[chatId].status === 'waiting_for_address' || userStates[chatId].status === 'waiting_for_pickup_name') {
         userStates[chatId].tempAddress = text;
         userStates[chatId].status = 'waiting_for_payment';
         
         let total = userStates[chatId].cart.reduce((sum, p) => sum + (p.price * p.qty), 0);
-        
         bot.sendMessage(chatId, `Your total bill is: ₹${total}\nPlease choose your payment method:`, {
             reply_markup: {
                 inline_keyboard: [
@@ -176,6 +185,7 @@ bot.on('message', (msg) => {
         bot.sendMessage(chatId, `Welcome to ${myStoreName}! 🌾\nWhat would you like to browse today?`, {
             reply_markup: {
                 inline_keyboard: [
+                    [{ text: '🔍 Search Product', callback_data: 'search_product' }], // NEW SEARCH BUTTON
                     [{ text: '🛍️ Browse Categories', callback_data: 'browse_categories' }],
                     [{ text: `🛒 View Cart (${userStates[chatId].cart.length} items)`, callback_data: 'view_cart' }]
                 ]
@@ -189,7 +199,12 @@ bot.on('callback_query', (query) => {
     const data = query.data; 
     initUser(chatId);
 
-    if (data === 'browse_categories') {
+    // SEARCH LOGIC
+    if (data === 'search_product') {
+        userStates[chatId].status = 'waiting_for_search';
+        bot.sendMessage(chatId, "🔍 Please type the name of the product you are looking for (e.g., Atta, Maggi):");
+    }
+    else if (data === 'browse_categories') {
         const products = readDB('products.json');
         if (products.length === 0) return bot.sendMessage(chatId, "Store is empty right now.");
 
@@ -208,41 +223,57 @@ bot.on('callback_query', (query) => {
             });
         });
     }
-    // TRIGGER QUANTITY QUESTION
     else if (data.startsWith('add_')) {
         const productId = data.replace('add_', '');
         const product = readDB('products.json').find(p => p.id === productId);
-        
         if (product) {
             userStates[chatId].tempProductId = productId;
             userStates[chatId].status = 'waiting_for_quantity';
             bot.sendMessage(chatId, `How many units of ${product.name} do you want?\n(Please type a number, e.g., 1, 2, 5)`);
         }
     }
+    // VIEW CART & REMOVE ITEM LOGIC (NEW)
     else if (data === 'view_cart') {
         const cart = userStates[chatId].cart;
         if (cart.length === 0) return bot.sendMessage(chatId, "Your cart is empty.");
 
         let billText = "🛒 Your Cart:\n\n";
         let total = 0;
+        let actionButtons = []; // Dynamic buttons array
         
         cart.forEach(p => { 
             const itemUnit = p.unit ? ` (${p.unit})` : '';
             const itemTotal = p.price * p.qty;
             billText += `- ${p.name}${itemUnit} x ${p.qty} = ₹${itemTotal}\n`; 
             total += itemTotal; 
+            
+            // Add a remove button for each item
+            actionButtons.push([{ text: `❌ Remove ${p.name}`, callback_data: `remove_${p.id}` }]);
         });
         
         billText += `\n💰 Grand Total: ₹${total}\n\nHow would you like to receive your order?`;
 
+        // Add clear cart and checkout buttons
+        actionButtons.push([{ text: '🗑️ Clear Entire Cart', callback_data: 'clear_cart' }]);
+        actionButtons.push([{ text: '🏍️ Home Delivery', callback_data: 'checkout_delivery' }]);
+        actionButtons.push([{ text: '🚶‍♂️ Store Pickup', callback_data: 'checkout_pickup' }]);
+
         bot.sendMessage(chatId, billText, {
-            reply_markup: {
-                inline_keyboard: [
-                    [{ text: '🏍️ Home Delivery', callback_data: 'checkout_delivery' }],
-                    [{ text: '🚶‍♂️ Store Pickup', callback_data: 'checkout_pickup' }]
-                ]
-            }
+            reply_markup: { inline_keyboard: actionButtons }
         });
+    }
+    // REMOVE SINGLE ITEM LOGIC
+    else if (data.startsWith('remove_')) {
+        const productId = data.replace('remove_', '');
+        userStates[chatId].cart = userStates[chatId].cart.filter(p => p.id !== productId);
+        bot.sendMessage(chatId, "✅ Item removed from your cart.");
+        // Automatically show updated cart
+        bot.sendMessage(chatId, "Click /start to continue shopping or view your updated cart.");
+    }
+    // CLEAR ENTIRE CART LOGIC
+    else if (data === 'clear_cart') {
+        userStates[chatId].cart = [];
+        bot.sendMessage(chatId, "🗑️ Your cart has been completely cleared. Click /start to browse again.");
     }
     else if (data === 'checkout_delivery') {
         userStates[chatId].deliveryType = 'Home Delivery';
