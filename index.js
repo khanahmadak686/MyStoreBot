@@ -1,17 +1,35 @@
 const TelegramBot = require('node-telegram-bot-api');
 const express = require('express');
 const path = require('path');
-const fs = require('fs');
+const mongoose = require('mongoose');
 
 // --- CREDENTIALS & SETTINGS ---
 const token = '8998018950:AAECsgWiq5cSLYyh63MC2lqRmKw2a8-TzTU';
 const adminChatId = '1703328653'; 
 const myUpiId = 'ar844042@okicici'; 
 const myStoreName = 'My Kirana Store';
-const myBotUsername = 'TheSmartSeller_store'; // 🛠️ ENTER YOUR BOT USERNAME HERE (Without @)
+const myBotUsername = 'TheSmartSeller_store'; 
 
-// 🛠️ PORT & WEBHOOK SETUP FOR RENDER
 const PORT = process.env.PORT || 3000;
+const MONGO_URI = process.env.MONGO_URI; 
+
+// ==========================================
+// 🗄️ MONGODB CONNECTION & SCHEMAS
+// ==========================================
+mongoose.connect(MONGO_URI)
+    .then(() => console.log('✅ MongoDB Connected Successfully!'))
+    .catch(err => console.log('❌ MongoDB Connection Error:', err));
+
+const Product = mongoose.model('Product', new mongoose.Schema({ id: String, name: String, category: String, unit: String, price: Number, stock: Number, image: String }));
+const Order = mongoose.model('Order', new mongoose.Schema({ id: String, chatId: Number, date: String, status: String, customer_details: String, delivery_type: String, payment_mode: String, items: Array, delivery_fee: Number, discount: Number, wallet_used: Number, total: Number }));
+const User = mongoose.model('User', new mongoose.Schema({ chatId: Number }));
+const Wallet = mongoose.model('Wallet', new mongoose.Schema({ chatId: Number, balance: { type: Number, default: 0 } }));
+const Profile = mongoose.model('Profile', new mongoose.Schema({ chatId: Number, address: String }));
+const Promo = mongoose.model('Promo', new mongoose.Schema({ code: String, discount: Number }));
+
+// ==========================================
+// 🌐 SERVER & WEBHOOK SETUP
+// ==========================================
 const bot = new TelegramBot(token, { webHook: true });
 bot.setWebHook(`https://mystore-bot-live.onrender.com/bot${token}`);
 
@@ -26,19 +44,6 @@ app.post(`/bot${token}`, (req, res) => {
 
 const userStates = {};
 
-// ==========================================
-// 🗄️ DATABASE HELPERS
-// ==========================================
-function readDB(file) {
-    const dbPath = path.join(__dirname, file);
-    if (fs.existsSync(dbPath)) return JSON.parse(fs.readFileSync(dbPath, 'utf8'));
-    if (file === 'profiles.json' || file === 'promos.json' || file === 'wallet.json') return {};
-    return [];
-}
-function writeDB(file, data) {
-    fs.writeFileSync(path.join(__dirname, file), JSON.stringify(data, null, 2));
-}
-
 function initUser(chatId) {
     if (!userStates[chatId]) {
         userStates[chatId] = { 
@@ -51,17 +56,18 @@ function initUser(chatId) {
 
 function isStoreOpen() {
     let hour = new Date().toLocaleString("en-US", {timeZone: "Asia/Kolkata", hour: 'numeric', hour12: false});
-    hour = parseInt(hour);
-    return hour >= 8 && hour < 22;
+    return parseInt(hour) >= 8 && parseInt(hour) < 22;
 }
 
-function checkWalletAndProceed(chatId) {
-    let wallets = readDB('wallet.json');
-    if (wallets[chatId] && wallets[chatId] > 0) {
-        bot.sendMessage(chatId, `🪙 Your Kirana Wallet has a balance of **₹${wallets[chatId]}**. Would you like to use it for this order?`, {
+async function checkWalletAndProceed(chatId) {
+    let walletData = await Wallet.findOne({ chatId: chatId });
+    let balance = walletData ? walletData.balance : 0;
+    
+    if (balance > 0) {
+        bot.sendMessage(chatId, `🪙 Your Kirana Wallet has a balance of **₹${balance}**. Would you like to use it for this order?`, {
             parse_mode: 'Markdown',
             reply_markup: { inline_keyboard: [
-                [{ text: `✅ Yes, use ₹${wallets[chatId]}`, callback_data: 'use_wallet' }],
+                [{ text: `✅ Yes, use ₹${balance}`, callback_data: 'use_wallet' }],
                 [{ text: '❌ No, save it', callback_data: 'skip_wallet' }]
             ]}
         });
@@ -99,8 +105,8 @@ function sendPaymentOptions(chatId) {
     bot.sendMessage(chatId, msgText, { reply_markup: { inline_keyboard: [ [{ text: '📱 Pay via UPI (Online)', callback_data: 'pay_upi' }], [{ text: '💵 Cash / Pay at Store', callback_data: 'pay_cash' }] ] } });
 }
 
-function sendCategoryBatch(chatId) {
-    const products = readDB('products.json').filter(p => p.category === userStates[chatId].currentCategory);
+async function sendCategoryBatch(chatId) {
+    const products = await Product.find({ category: userStates[chatId].currentCategory });
     const page = userStates[chatId].categoryPage;
     const limit = 5; 
     const start = page * limit;
@@ -121,41 +127,41 @@ function sendCategoryBatch(chatId) {
 }
 
 // ==========================================
-// 🌐 WEB DASHBOARD, RIDER & ROUTES
+// 🌐 WEB ROUTES & APIS
 // ==========================================
 app.get('/', (req, res) => res.sendFile(path.join(__dirname, 'dashboard.html')));
 app.get('/rider', (req, res) => res.sendFile(path.join(__dirname, 'rider.html')));
 
-app.get('/api/rider-orders', (req, res) => {
-    const orders = readDB('orders.json');
-    res.json(orders.filter(o => o.status === 'PACKED' || o.status === 'OUT'));
+app.get('/api/rider-orders', async (req, res) => {
+    const orders = await Order.find({ status: { $in: ['PACKED', 'OUT'] } });
+    res.json(orders);
 });
 
-app.post('/api/mark-delivered/:orderId', (req, res) => {
-    let orders = readDB('orders.json');
-    let orderIndex = orders.findIndex(o => o.id === req.params.orderId);
-    if(orderIndex !== -1) {
-        orders[orderIndex].status = 'DELIVERED'; writeDB('orders.json', orders);
-        bot.sendMessage(orders[orderIndex].chatId, `✅ Your order (ID: ${orders[orderIndex].id}) has been successfully delivered. Thank you for shopping with us!`);
-        bot.sendMessage(adminChatId, `🚨 **DELIVERY UPDATE** 🚨\nThe rider has successfully delivered Order ID: ${orders[orderIndex].id}!`);
+app.post('/api/mark-delivered/:orderId', async (req, res) => {
+    let order = await Order.findOne({ id: req.params.orderId });
+    if(order) {
+        order.status = 'DELIVERED';
+        await order.save();
+        bot.sendMessage(order.chatId, `✅ Your order (ID: ${order.id}) has been successfully delivered. Thank you for shopping with us!`);
+        bot.sendMessage(adminChatId, `🚨 **DELIVERY UPDATE** 🚨\nThe rider has successfully delivered Order ID: ${order.id}!`);
         res.json({success: true});
     } else res.json({success: false});
 });
 
-app.post('/add-product', (req, res) => {
-    let products = readDB('products.json');
-    products.push({ name: req.body.name, category: req.body.category, unit: req.body.unit || '', price: Number(req.body.price), stock: Number(req.body.stock) || 100, image: req.body.image, id: `prod_${Date.now()}` });
-    writeDB('products.json', products); res.send('<h2 style="text-align:center; margin-top:50px;">✅ Item Added! <br><a href="/">Go Back</a></h2>');
+app.post('/add-product', async (req, res) => {
+    await Product.create({ name: req.body.name, category: req.body.category, unit: req.body.unit || '', price: Number(req.body.price), stock: Number(req.body.stock) || 100, image: req.body.image, id: `prod_${Date.now()}` });
+    res.send('<h2 style="text-align:center; margin-top:50px;">✅ Item Added to MongoDB! <br><a href="/">Go Back</a></h2>');
 });
 
-app.post('/broadcast', (req, res) => {
+app.post('/broadcast', async (req, res) => {
     const message = `📢 SPECIAL OFFER 📢\n\n${req.body.message}`;
-    readDB('users.json').forEach(userId => { bot.sendMessage(userId, message).catch(err => console.log("Blocked")); });
+    const users = await User.find({});
+    users.forEach(u => { bot.sendMessage(u.chatId, message).catch(err => console.log("Blocked")); });
     res.send(`<h2 style="text-align:center; margin-top:50px;">✅ Message sent! <br><a href="/">Go Back</a></h2>`);
 });
 
-app.get('/download-sales', (req, res) => {
-    const orders = readDB('orders.json');
+app.get('/download-sales', async (req, res) => {
+    const orders = await Order.find({});
     let csv = 'Order ID,Date,Status,Customer Info,Type,Payment Mode,Items Total,Delivery Fee,Discount,Grand Total\n';
     orders.forEach(o => {
         let safeInfo = o.customer_details ? o.customer_details.replace(/,/g, ' ') : ''; 
@@ -164,9 +170,8 @@ app.get('/download-sales', (req, res) => {
     res.header('Content-Type', 'text/csv'); res.attachment(`kirana_sales_${Date.now()}.csv`); return res.send(csv);
 });
 
-app.get('/print-bill/:orderId', (req, res) => {
-    const orders = readDB('orders.json');
-    const order = orders.find(o => o.id === req.params.orderId);
+app.get('/print-bill/:orderId', async (req, res) => {
+    const order = await Order.findOne({ id: req.params.orderId });
     if(!order) return res.send("Order not found!");
     let html = `<div style="font-family: Arial; max-width: 400px; margin: auto; padding: 20px; border: 1px solid #ccc;"><h2 style="text-align: center;">${myStoreName} - Receipt</h2><p><b>Order ID:</b> ${order.id}<br><b>Date:</b> ${order.date}<br><b>Customer Info:</b> ${order.customer_details}<br><b>Type:</b> ${order.delivery_type} | <b>Payment:</b> ${order.payment_mode}</p><hr><table style="width: 100%; text-align: left; border-collapse: collapse;"><tr><th style="border-bottom: 1px solid #eee;">Item</th><th style="border-bottom: 1px solid #eee;">Qty</th><th style="border-bottom: 1px solid #eee;">Total</th></tr>`;
     order.items.forEach(item => { html += `<tr><td>${item.name} (${item.unit||''})</td><td>${item.qty}</td><td>₹${item.price * item.qty}</td></tr>`; });
@@ -178,31 +183,27 @@ app.get('/print-bill/:orderId', (req, res) => {
     res.send(html);
 });
 
-app.listen(PORT, '0.0.0.0', () => console.log(`Store System Live on port ${PORT}!`));
+app.listen(PORT, '0.0.0.0', () => console.log(`🚀 Database System Live on port ${PORT}!`));
 
 // ==========================================
 // 🤖 TELEGRAM BOT LOGIC
 // ==========================================
 
-bot.on('message', (msg) => {
+bot.on('message', async (msg) => {
     const chatId = msg.chat.id;
     const text = msg.text || '';
     initUser(chatId);
 
-    // 🎁 REFERRAL SYSTEM LOGIC
     if (text.startsWith('/start')) {
-        let users = readDB('users.json');
-        let isNewUser = !users.includes(chatId);
+        let user = await User.findOne({ chatId: chatId });
+        let isNewUser = !user;
 
-        // Check if user came from a referral link
         const parts = text.split(' ');
         if (parts.length > 1 && isNewUser) {
-            const referrerId = parts[1];
+            const referrerId = Number(parts[1]);
             if (referrerId != chatId) {
-                let wallets = readDB('wallet.json');
-                wallets[referrerId] = (wallets[referrerId] || 0) + 20; 
-                wallets[chatId] = (wallets[chatId] || 0) + 20;         
-                writeDB('wallet.json', wallets);
+                await Wallet.findOneAndUpdate({ chatId: referrerId }, { $inc: { balance: 20 } }, { upsert: true });
+                await Wallet.findOneAndUpdate({ chatId: chatId }, { $inc: { balance: 20 } }, { upsert: true });
 
                 bot.sendMessage(referrerId, `🎉 **Great News!** A friend joined our store using your link. ₹20 has been added to your Kirana Wallet! 🎁`);
                 bot.sendMessage(chatId, `🎁 **Welcome Bonus!** You received ₹20 as a free wallet balance for joining via an invite link. You can use it on your first order!`);
@@ -210,12 +211,11 @@ bot.on('message', (msg) => {
         }
 
         if (isNewUser) {
-            users.push(chatId);
-            writeDB('users.json', users);
+            await User.create({ chatId: chatId });
         }
 
-        let wallets = readDB('wallet.json');
-        let walletBalance = wallets[chatId] ? `(Wallet: ₹${wallets[chatId]})` : '';
+        let walletData = await Wallet.findOne({ chatId: chatId });
+        let walletBalance = walletData && walletData.balance > 0 ? `(Wallet: ₹${walletData.balance})` : '';
         
         bot.sendMessage(chatId, `Welcome to ${myStoreName}! 🌾 ${walletBalance}`, {
             reply_markup: {
@@ -231,7 +231,6 @@ bot.on('message', (msg) => {
         return;
     }
 
-    // 👨‍💼 ADMIN REPLY LOGIC
     if (chatId == adminChatId && text.startsWith('/reply ')) {
         const parts = text.split(' '); const targetChatId = parts[1]; const replyMsg = parts.slice(2).join(' ');
         bot.sendMessage(targetChatId, `👨‍💼 **Store Owner Reply:**\n${replyMsg}`); 
@@ -255,44 +254,45 @@ bot.on('message', (msg) => {
     if (userStates[chatId].status === 'waiting_for_address_only') {
         userStates[chatId].tempAddress = `${msg.from.first_name || "Customer"}, ${text} (Phone: ${userStates[chatId].phone})`;
         if (userStates[chatId].deliveryType === 'Home Delivery') {
-            let profiles = readDB('profiles.json'); profiles[chatId] = userStates[chatId].tempAddress; writeDB('profiles.json', profiles);
+            await Profile.findOneAndUpdate({ chatId: chatId }, { address: userStates[chatId].tempAddress }, { upsert: true });
         }
         userStates[chatId].status = 'waiting_for_promo';
         bot.sendMessage(chatId, "🏷️ Do you have a Promo Code?\nType the code below, or click 'Skip':", { reply_markup: { inline_keyboard: [[{ text: '⏭️ Skip Promo', callback_data: 'skip_promo' }]] } }); return;
     }
 
     if (userStates[chatId].status === 'waiting_for_promo') {
-        const promos = readDB('promos.json');
-        if (promos[text.toUpperCase()]) {
-            userStates[chatId].discount = promos[text.toUpperCase()]; userStates[chatId].promoName = text.toUpperCase();
-            bot.sendMessage(chatId, `🎉 Awesome! Promo code applied. You saved ₹${userStates[chatId].discount}.`);
-        } else bot.sendMessage(chatId, "❌ Invalid Promo Code. Proceeding without discount.");
-        checkWalletAndProceed(chatId); return;
+        let promo = await Promo.findOne({ code: text.toUpperCase() });
+        if (promo) {
+            userStates[chatId].discount = promo.discount; userStates[chatId].promoName = promo.code;
+            bot.sendMessage(chatId, `🎉 Awesome! Promo code applied. You saved ₹${promo.discount}.`);
+        } else {
+            bot.sendMessage(chatId, "❌ Invalid Promo Code. Proceeding without discount.");
+        }
+        await checkWalletAndProceed(chatId); return;
     }
 
     if (userStates[chatId].status === 'waiting_for_quantity') {
         const qty = parseInt(text);
         if (isNaN(qty) || qty <= 0) return bot.sendMessage(chatId, "Please enter a valid number:");
-        const product = readDB('products.json').find(p => p.id === userStates[chatId].tempProductId);
+        const product = await Product.findOne({ id: userStates[chatId].tempProductId });
         if (product) {
             let existingQty = 0;
             const existingItem = userStates[chatId].cart.find(p => p.id === product.id);
             if (existingItem) existingQty = existingItem.qty;
             if ((existingQty + qty) > (product.stock || 100)) return bot.sendMessage(chatId, `⚠️ Sorry, we only have ${product.stock} units of this item left in stock.`);
             
-            if (existingItem) existingItem.qty += qty; else userStates[chatId].cart.push({ ...product, qty: qty });
+            if (existingItem) existingItem.qty += qty; else userStates[chatId].cart.push({ ...product.toObject(), qty: qty });
             bot.sendMessage(chatId, `✅ Added ${qty} x ${product.name} to cart!`, { reply_markup: { inline_keyboard: [[{ text: '🛒 View Cart', callback_data: 'view_cart' }]] } });
         }
         userStates[chatId].status = 'idle'; return;
     }
 });
 
-bot.on('callback_query', (query) => {
+bot.on('callback_query', async (query) => {
     const chatId = query.message.chat.id;
     const data = query.data; 
     initUser(chatId);
 
-    // 🎁 REFER & EARN CALLBACK
     if (data === 'refer_earn') {
         const referLink = `https://t.me/${myBotUsername}?start=${chatId}`;
         const referMsg = `🎁 **Refer & Earn ₹20!**\n\nShare this link with your friends and neighbors on WhatsApp. \nAs soon as someone joins our store using this link, **both you and your friend will receive ₹20 free Kirana Wallet balance!**\n\n👇 Copy your link below:\n${referLink}`;
@@ -301,7 +301,8 @@ bot.on('callback_query', (query) => {
     }
 
     if (data === 'use_wallet') {
-        let wallets = readDB('wallet.json'); userStates[chatId].walletUsed = wallets[chatId] || 0;
+        let walletData = await Wallet.findOne({ chatId: chatId });
+        userStates[chatId].walletUsed = walletData ? walletData.balance : 0;
         userStates[chatId].status = 'waiting_for_payment'; sendPaymentOptions(chatId); return;
     }
     if (data === 'skip_wallet') {
@@ -314,8 +315,10 @@ bot.on('callback_query', (query) => {
 
     if (data.startsWith('status_')) {
         const parts = data.split('_'); const status = parts[1]; const custChatId = parts[2]; const orderId = parts[3];
-        let orders = readDB('orders.json'); let orderIndex = orders.findIndex(o => o.id === orderId);
-        if(orderIndex !== -1) { orders[orderIndex].status = status; writeDB('orders.json', orders); }
+        let order = await Order.findOne({ id: orderId });
+        if(order) { 
+            order.status = status; await order.save(); 
+        }
         let msg = "";
         if (status === 'PACKED') msg = `📦 Your order (ID: ${orderId}) has been packed!`;
         if (status === 'OUT') msg = `🚚 Your order is out for delivery.`;
@@ -328,10 +331,10 @@ bot.on('callback_query', (query) => {
     }
 
     if (data === 'skip_promo') {
-        userStates[chatId].discount = 0; userStates[chatId].promoName = ''; checkWalletAndProceed(chatId);
+        userStates[chatId].discount = 0; userStates[chatId].promoName = ''; await checkWalletAndProceed(chatId);
     }
     else if (data === 'repeat_order') {
-        const orders = readDB('orders.json'); const lastOrder = [...orders].reverse().find(o => o.chatId === chatId);
+        const lastOrder = await Order.findOne({ chatId: chatId }).sort({ _id: -1 });
         if (lastOrder && lastOrder.items) {
             userStates[chatId].cart = [...lastOrder.items]; bot.sendMessage(chatId, "🔄 Your previous order has been added to the cart!", { reply_markup: { inline_keyboard: [[{ text: '🛒 View Cart', callback_data: 'view_cart' }]] } });
         } else bot.sendMessage(chatId, "❌ We couldn't find any previous orders for you.");
@@ -340,17 +343,17 @@ bot.on('callback_query', (query) => {
         userStates[chatId].status = 'waiting_for_search'; bot.sendMessage(chatId, "🔍 Type the product name:");
     }
     else if (data === 'browse_categories') {
-        const products = readDB('products.json');
+        const products = await Product.find({});
         if (products.length === 0) return bot.sendMessage(chatId, "Store is empty.");
         const categories = [...new Set(products.map(p => p.category))];
         const categoryButtons = categories.map(cat => [{ text: `📂 ${cat}`, callback_data: `cat_${cat}` }]);
         bot.sendMessage(chatId, "Choose a category:", { reply_markup: { inline_keyboard: categoryButtons } });
     } 
     else if (data.startsWith('cat_')) {
-        userStates[chatId].currentCategory = data.replace('cat_', ''); userStates[chatId].categoryPage = 0; sendCategoryBatch(chatId);
+        userStates[chatId].currentCategory = data.replace('cat_', ''); userStates[chatId].categoryPage = 0; await sendCategoryBatch(chatId);
     }
     else if (data === 'next_page') {
-        userStates[chatId].categoryPage += 1; sendCategoryBatch(chatId);
+        userStates[chatId].categoryPage += 1; await sendCategoryBatch(chatId);
     }
     else if (data.startsWith('add_')) {
         userStates[chatId].tempProductId = data.replace('add_', ''); userStates[chatId].status = 'waiting_for_quantity'; bot.sendMessage(chatId, `How many units do you want?`);
@@ -375,16 +378,17 @@ bot.on('callback_query', (query) => {
     }
     else if (data === 'checkout_delivery') {
         userStates[chatId].deliveryType = 'Home Delivery';
-        let profiles = readDB('profiles.json');
-        if (profiles[chatId]) {
-            bot.sendMessage(chatId, `🏠 Save Address:\n${profiles[chatId]}\nUse this?`, { reply_markup: { inline_keyboard: [ [{ text: '✅ Yes', callback_data: 'use_saved_address' }], [{ text: '📝 New Address', callback_data: 'enter_new_address' }] ] } });
+        let profile = await Profile.findOne({ chatId: chatId });
+        if (profile && profile.address) {
+            bot.sendMessage(chatId, `🏠 Save Address:\n${profile.address}\nUse this?`, { reply_markup: { inline_keyboard: [ [{ text: '✅ Yes', callback_data: 'use_saved_address' }], [{ text: '📝 New Address', callback_data: 'enter_new_address' }] ] } });
         } else {
             userStates[chatId].status = 'waiting_for_contact'; 
             bot.sendMessage(chatId, "📲 Please share your verified phone number:", { reply_markup: { keyboard: [[{ text: '📲 Share Contact', request_contact: true }]], resize_keyboard: true, one_time_keyboard: true } });
         }
     }
     else if (data === 'use_saved_address') {
-        userStates[chatId].tempAddress = readDB('profiles.json')[chatId]; userStates[chatId].status = 'waiting_for_promo';
+        let profile = await Profile.findOne({ chatId: chatId });
+        userStates[chatId].tempAddress = profile.address; userStates[chatId].status = 'waiting_for_promo';
         bot.sendMessage(chatId, "🏷️ Do you have a Promo Code?\nType the code below, or click 'Skip':", { reply_markup: { inline_keyboard: [[{ text: '⏭️ Skip Promo', callback_data: 'skip_promo' }]] } });
     }
     else if (data === 'enter_new_address') {
@@ -398,26 +402,26 @@ bot.on('callback_query', (query) => {
     else if (data === 'pay_upi' || data === 'pay_cash') {
         let orderId = `ORD_${Date.now()}`; let paymentMode = data === 'pay_upi' ? 'UPI' : 'Cash';
         
-        let orders = readDB('orders.json');
-        orders.push({
+        await Order.create({
             id: orderId, chatId: chatId, date: new Date().toLocaleString(), status: 'PENDING', 
             customer_details: userStates[chatId].tempAddress, delivery_type: userStates[chatId].deliveryType,
             payment_mode: paymentMode, items: userStates[chatId].cart, 
             delivery_fee: userStates[chatId].deliveryFee, discount: userStates[chatId].discount, 
             wallet_used: userStates[chatId].walletDeduction, total: userStates[chatId].finalTotal
         });
-        writeDB('orders.json', orders);
 
-        let products = readDB('products.json');
-        userStates[chatId].cart.forEach(cartItem => { let p = products.find(prod => prod.id === cartItem.id); if(p && p.stock) p.stock -= cartItem.qty; });
-        writeDB('products.json', products);
+        for (let cartItem of userStates[chatId].cart) {
+            await Product.findOneAndUpdate({ id: cartItem.id }, { $inc: { stock: -cartItem.qty } });
+        }
 
-        let wallets = readDB('wallet.json');
-        if (userStates[chatId].walletDeduction > 0) wallets[chatId] -= userStates[chatId].walletDeduction;
+        if (userStates[chatId].walletDeduction > 0) {
+            await Wallet.findOneAndUpdate({ chatId: chatId }, { $inc: { balance: -userStates[chatId].walletDeduction } });
+        }
+        
         let cashbackEarned = Math.round(userStates[chatId].finalTotal * 0.05); 
-        if (!wallets[chatId]) wallets[chatId] = 0;
-        if (cashbackEarned > 0) wallets[chatId] += cashbackEarned;
-        writeDB('wallet.json', wallets);
+        if (cashbackEarned > 0) {
+            await Wallet.findOneAndUpdate({ chatId: chatId }, { $inc: { balance: cashbackEarned } }, { upsert: true });
+        }
 
         if (paymentMode === 'UPI') {
             const upiLink = `upi://pay?pa=${myUpiId}&pn=${myStoreName.replace(/ /g, '%20')}&am=${userStates[chatId].finalTotal}`;
