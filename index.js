@@ -4,7 +4,7 @@ const path = require('path');
 const mongoose = require('mongoose');
 
 // --- CREDENTIALS & SETTINGS ---
-const token = process.env.TELEGRAM_TOKEN;
+const token = process.env.TELEGRAM_TOKEN; // Safe Token
 const adminChatId = '1703328653'; 
 const myUpiId = 'ar844042@okicici'; 
 const myStoreName = 'My Kirana Store';
@@ -105,6 +105,7 @@ function sendPaymentOptions(chatId) {
     bot.sendMessage(chatId, msgText, { reply_markup: { inline_keyboard: [ [{ text: '📱 Pay via UPI (Online)', callback_data: 'pay_upi' }], [{ text: '💵 Cash / Pay at Store', callback_data: 'pay_cash' }] ] } });
 }
 
+// 🛠️ FIX 1: Error handling added for broken image URLs
 async function sendCategoryBatch(chatId) {
     const products = await Product.find({ category: userStates[chatId].currentCategory });
     const page = userStates[chatId].categoryPage;
@@ -113,14 +114,23 @@ async function sendCategoryBatch(chatId) {
     const end = start + limit;
     const currentBatch = products.slice(start, end);
 
-    currentBatch.forEach(product => {
+    for (const product of currentBatch) {
         let stockText = product.stock > 0 ? `📦 Stock Available` : `🔴 OUT OF STOCK`;
         let buttons = product.stock > 0 ? [[{ text: '➕ Add to Cart', callback_data: `add_${product.id}` }]] : [];
-        bot.sendPhoto(chatId, product.image, {
-            caption: `📦 ${product.name} (${product.unit||''})\n💰 Price: ₹${product.price}\n${stockText}`,
-            reply_markup: { inline_keyboard: buttons }
-        });
-    });
+        
+        try {
+            await bot.sendPhoto(chatId, product.image, {
+                caption: `📦 ${product.name} (${product.unit||''})\n💰 Price: ₹${product.price}\n${stockText}`,
+                reply_markup: { inline_keyboard: buttons }
+            });
+        } catch (err) {
+            // If the image URL is broken, send as plain text
+            await bot.sendMessage(chatId, `📦 ${product.name} (${product.unit||''})\n💰 Price: ₹${product.price}\n${stockText}\n\n*(Product image unavailable)*`, { 
+                parse_mode: 'Markdown',
+                reply_markup: { inline_keyboard: buttons } 
+            });
+        }
+    }
 
     if (end < products.length) bot.sendMessage(chatId, `Showing ${end} of ${products.length} items.`, { reply_markup: { inline_keyboard: [[{ text: '⬇️ Show More', callback_data: 'next_page' }]] } });
     else if (products.length > 0) bot.sendMessage(chatId, `✅ End of category. Check your cart:`, { reply_markup: { inline_keyboard: [[{ text: '🛒 View Cart', callback_data: 'view_cart' }]] } });
@@ -150,7 +160,7 @@ app.post('/api/mark-delivered/:orderId', async (req, res) => {
 
 app.post('/add-product', async (req, res) => {
     await Product.create({ name: req.body.name, category: req.body.category, unit: req.body.unit || '', price: Number(req.body.price), stock: Number(req.body.stock) || 100, image: req.body.image, id: `prod_${Date.now()}` });
-    res.send('<h2 style="text-align:center; margin-top:50px;">✅ Item Added to MongoDB! <br><a href="/">Go Back</a></h2>');
+    res.send('<h2 style="text-align:center; margin-top:50px; font-family:Arial;">✅ Item Added to Store! <br><br><a href="/" style="padding:10px 20px; background:#28a745; color:white; text-decoration:none; border-radius:5px;">Go Back</a></h2>');
 });
 
 app.post('/broadcast', async (req, res) => {
@@ -193,6 +203,36 @@ bot.on('message', async (msg) => {
     const chatId = msg.chat.id;
     const text = msg.text || '';
     initUser(chatId);
+
+    // 🛠️ FIX 2: Search Logic added!
+    if (userStates[chatId].status === 'waiting_for_search') {
+        const searchTerm = text.toLowerCase();
+        const products = await Product.find({ name: { $regex: searchTerm, $options: 'i' } });
+        
+        if (products.length === 0) {
+            bot.sendMessage(chatId, "❌ No products found with that name. Please try another search:");
+            return;
+        }
+
+        bot.sendMessage(chatId, `🔍 Found ${products.length} results for "${text}":`);
+        
+        const results = products.slice(0, 5); // Show max 5 results in search
+        for (const product of results) {
+            let stockText = product.stock > 0 ? `📦 Stock Available` : `🔴 OUT OF STOCK`;
+            let buttons = product.stock > 0 ? [[{ text: '➕ Add to Cart', callback_data: `add_${product.id}` }]] : [];
+            
+            try {
+                await bot.sendPhoto(chatId, product.image, {
+                    caption: `📦 ${product.name} (${product.unit||''})\n💰 Price: ₹${product.price}\n${stockText}`,
+                    reply_markup: { inline_keyboard: buttons }
+                });
+            } catch (err) {
+                await bot.sendMessage(chatId, `📦 ${product.name} (${product.unit||''})\n💰 Price: ₹${product.price}\n${stockText}\n\n*(Product image unavailable)*`, { parse_mode: 'Markdown', reply_markup: { inline_keyboard: buttons } });
+            }
+        }
+        userStates[chatId].status = 'idle';
+        return;
+    }
 
     if (text.startsWith('/start')) {
         let user = await User.findOne({ chatId: chatId });
@@ -344,7 +384,7 @@ bot.on('callback_query', async (query) => {
     }
     else if (data === 'browse_categories') {
         const products = await Product.find({});
-        if (products.length === 0) return bot.sendMessage(chatId, "Store is empty.");
+        if (products.length === 0) return bot.sendMessage(chatId, "Store is empty. Please add products via Admin Dashboard.");
         const categories = [...new Set(products.map(p => p.category))];
         const categoryButtons = categories.map(cat => [{ text: `📂 ${cat}`, callback_data: `cat_${cat}` }]);
         bot.sendMessage(chatId, "Choose a category:", { reply_markup: { inline_keyboard: categoryButtons } });
