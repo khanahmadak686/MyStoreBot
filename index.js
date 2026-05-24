@@ -8,12 +8,21 @@ const token = '8998018950:AAECsgWiq5cSLYyh63MC2lqRmKw2a8-TzTU';
 const adminChatId = '1703328653'; 
 const myUpiId = 'ar844042@okicici'; 
 const myStoreName = 'My Kirana Store';
-const myBotUsername = 'TheSmartSeller_store'; // 🛠️ YAHAN APNE BOT KA USERNAME DAALEIN (Bina @ ke)
+const myBotUsername = 'TheSmartSeller_store'; // 🛠️ ENTER YOUR BOT USERNAME HERE (Without @)
 
-const bot = new TelegramBot(token, {polling: true});
+// 🛠️ PORT & WEBHOOK SETUP FOR RENDER
+const PORT = process.env.PORT || 3000;
+const bot = new TelegramBot(token, { webHook: true });
+bot.setWebHook(`https://mystore-bot-live.onrender.com/bot${token}`);
+
 const app = express();
 app.use(express.urlencoded({ extended: true })); 
 app.use(express.json()); 
+
+app.post(`/bot${token}`, (req, res) => {
+    bot.processUpdate(req.body);
+    res.sendStatus(200);
+});
 
 const userStates = {};
 
@@ -49,11 +58,11 @@ function isStoreOpen() {
 function checkWalletAndProceed(chatId) {
     let wallets = readDB('wallet.json');
     if (wallets[chatId] && wallets[chatId] > 0) {
-        bot.sendMessage(chatId, `🪙 Aapke Kirana Wallet mein **₹${wallets[chatId]}** hain. Kya aap inhe is order mein use karna chahte hain?`, {
+        bot.sendMessage(chatId, `🪙 Your Kirana Wallet has a balance of **₹${wallets[chatId]}**. Would you like to use it for this order?`, {
             parse_mode: 'Markdown',
             reply_markup: { inline_keyboard: [
-                [{ text: `✅ Haan, Use ₹${wallets[chatId]}`, callback_data: 'use_wallet' }],
-                [{ text: '❌ Nahi, Bacha kar rakhein', callback_data: 'skip_wallet' }]
+                [{ text: `✅ Yes, use ₹${wallets[chatId]}`, callback_data: 'use_wallet' }],
+                [{ text: '❌ No, save it', callback_data: 'skip_wallet' }]
             ]}
         });
     } else {
@@ -112,7 +121,7 @@ function sendCategoryBatch(chatId) {
 }
 
 // ==========================================
-// 🌐 WEB DASHBOARD, RIDER & ROUTES (Unchanged)
+// 🌐 WEB DASHBOARD, RIDER & ROUTES
 // ==========================================
 app.get('/', (req, res) => res.sendFile(path.join(__dirname, 'dashboard.html')));
 app.get('/rider', (req, res) => res.sendFile(path.join(__dirname, 'rider.html')));
@@ -127,8 +136,8 @@ app.post('/api/mark-delivered/:orderId', (req, res) => {
     let orderIndex = orders.findIndex(o => o.id === req.params.orderId);
     if(orderIndex !== -1) {
         orders[orderIndex].status = 'DELIVERED'; writeDB('orders.json', orders);
-        bot.sendMessage(orders[orderIndex].chatId, `✅ Aapka order (ID: ${orders[orderIndex].id}) successfully deliver ho gaya hai. Humse judne ke liye shukriya!`);
-        bot.sendMessage(adminChatId, `🚨 **DELIVERY UPDATE** 🚨\nRider ne Order ID: ${orders[orderIndex].id} successfully deliver kar diya hai!`);
+        bot.sendMessage(orders[orderIndex].chatId, `✅ Your order (ID: ${orders[orderIndex].id}) has been successfully delivered. Thank you for shopping with us!`);
+        bot.sendMessage(adminChatId, `🚨 **DELIVERY UPDATE** 🚨\nThe rider has successfully delivered Order ID: ${orders[orderIndex].id}!`);
         res.json({success: true});
     } else res.json({success: false});
 });
@@ -169,7 +178,7 @@ app.get('/print-bill/:orderId', (req, res) => {
     res.send(html);
 });
 
-app.listen(3000, () => console.log("Viral Referral System Live on port 3000!"));
+app.listen(PORT, '0.0.0.0', () => console.log(`Store System Live on port ${PORT}!`));
 
 // ==========================================
 // 🤖 TELEGRAM BOT LOGIC
@@ -180,33 +189,31 @@ bot.on('message', (msg) => {
     const text = msg.text || '';
     initUser(chatId);
 
-    // 🎁 REFERRAL SYSTEM LOGIC (New feature)
+    // 🎁 REFERRAL SYSTEM LOGIC
     if (text.startsWith('/start')) {
         let users = readDB('users.json');
         let isNewUser = !users.includes(chatId);
 
-        // Check if user came from a referral link (e.g. /start 123456789)
+        // Check if user came from a referral link
         const parts = text.split(' ');
         if (parts.length > 1 && isNewUser) {
             const referrerId = parts[1];
-            if (referrerId != chatId) { // Khud ko refer nahi kar sakte
+            if (referrerId != chatId) {
                 let wallets = readDB('wallet.json');
-                wallets[referrerId] = (wallets[referrerId] || 0) + 20; // Referrer gets ₹20
-                wallets[chatId] = (wallets[chatId] || 0) + 20;         // New User gets ₹20
+                wallets[referrerId] = (wallets[referrerId] || 0) + 20; 
+                wallets[chatId] = (wallets[chatId] || 0) + 20;         
                 writeDB('wallet.json', wallets);
 
-                bot.sendMessage(referrerId, `🎉 **Dhamaka!** Aapke dost ne aapke link se humari dukan par aana shuru kiya hai. Aapke Kirana Wallet mein ₹20 add kar diye gaye hain! 🎁`);
-                bot.sendMessage(chatId, `🎁 **Welcome Bonus!** Aapko invite link se aane par ₹20 ka free wallet balance mila hai. Ise aap apne pehle order mein use kar sakte hain!`);
+                bot.sendMessage(referrerId, `🎉 **Great News!** A friend joined our store using your link. ₹20 has been added to your Kirana Wallet! 🎁`);
+                bot.sendMessage(chatId, `🎁 **Welcome Bonus!** You received ₹20 as a free wallet balance for joining via an invite link. You can use it on your first order!`);
             }
         }
 
-        // Save new user
         if (isNewUser) {
             users.push(chatId);
             writeDB('users.json', users);
         }
 
-        // Standard Start Menu
         let wallets = readDB('wallet.json');
         let walletBalance = wallets[chatId] ? `(Wallet: ₹${wallets[chatId]})` : '';
         
@@ -227,20 +234,23 @@ bot.on('message', (msg) => {
     // 👨‍💼 ADMIN REPLY LOGIC
     if (chatId == adminChatId && text.startsWith('/reply ')) {
         const parts = text.split(' '); const targetChatId = parts[1]; const replyMsg = parts.slice(2).join(' ');
-        bot.sendMessage(targetChatId, `👨‍💼 **Store Owner Reply:**\n${replyMsg}`); bot.sendMessage(adminChatId, "✅ Customer ko reply bhej diya gaya hai."); return;
+        bot.sendMessage(targetChatId, `👨‍💼 **Store Owner Reply:**\n${replyMsg}`); 
+        bot.sendMessage(adminChatId, "✅ Reply successfully sent to the customer."); 
+        return;
     }
 
     if (userStates[chatId].status === 'waiting_for_support') {
-        const adminMsg = `📩 **New Support Message**\n👤 Name: ${msg.from.first_name}\n🆔 ID: ${chatId}\n💬 Message: ${text}\n\n👉 **Reply kaise karein?**\n\`/reply ${chatId} Aapka Message Yahan\` `;
-        bot.sendMessage(adminChatId, adminMsg, {parse_mode: 'Markdown'}); bot.sendMessage(chatId, "✅ Aapka message hum tak pahunch gaya hai. Hum jaldi hi reply karenge!");
+        const adminMsg = `📩 **New Support Message**\n👤 Name: ${msg.from.first_name}\n🆔 ID: ${chatId}\n💬 Message: ${text}\n\n👉 **How to reply?**\n\`/reply ${chatId} Your Message Here\` `;
+        bot.sendMessage(adminChatId, adminMsg, {parse_mode: 'Markdown'}); 
+        bot.sendMessage(chatId, "✅ Your message has been received. We will reply shortly!");
         userStates[chatId].status = 'idle'; return;
     }
 
     if (userStates[chatId].status === 'waiting_for_contact' && msg.contact) {
         userStates[chatId].phone = msg.contact.phone_number; userStates[chatId].status = 'waiting_for_address_only';
-        bot.sendMessage(chatId, "✅ Number verified! Kripya apna poora Delivery Address likh kar bhejein:", { reply_markup: { remove_keyboard: true } }); return;
+        bot.sendMessage(chatId, "✅ Number verified! Please type and send your complete Delivery Address:", { reply_markup: { remove_keyboard: true } }); return;
     }
-    if (userStates[chatId].status === 'waiting_for_contact' && !msg.contact) return bot.sendMessage(chatId, "Kripya niche diye gaye '📲 Share Contact' button par click karein.");
+    if (userStates[chatId].status === 'waiting_for_contact' && !msg.contact) return bot.sendMessage(chatId, "Please click the '📲 Share Contact' button below.");
 
     if (userStates[chatId].status === 'waiting_for_address_only') {
         userStates[chatId].tempAddress = `${msg.from.first_name || "Customer"}, ${text} (Phone: ${userStates[chatId].phone})`;
@@ -262,13 +272,13 @@ bot.on('message', (msg) => {
 
     if (userStates[chatId].status === 'waiting_for_quantity') {
         const qty = parseInt(text);
-        if (isNaN(qty) || qty <= 0) return bot.sendMessage(chatId, "Enter valid number:");
+        if (isNaN(qty) || qty <= 0) return bot.sendMessage(chatId, "Please enter a valid number:");
         const product = readDB('products.json').find(p => p.id === userStates[chatId].tempProductId);
         if (product) {
             let existingQty = 0;
             const existingItem = userStates[chatId].cart.find(p => p.id === product.id);
             if (existingItem) existingQty = existingItem.qty;
-            if ((existingQty + qty) > (product.stock || 100)) return bot.sendMessage(chatId, `⚠️ Sorry, humare paas is item ka sirf ${product.stock} stock bacha hai.`);
+            if ((existingQty + qty) > (product.stock || 100)) return bot.sendMessage(chatId, `⚠️ Sorry, we only have ${product.stock} units of this item left in stock.`);
             
             if (existingItem) existingItem.qty += qty; else userStates[chatId].cart.push({ ...product, qty: qty });
             bot.sendMessage(chatId, `✅ Added ${qty} x ${product.name} to cart!`, { reply_markup: { inline_keyboard: [[{ text: '🛒 View Cart', callback_data: 'view_cart' }]] } });
@@ -285,7 +295,7 @@ bot.on('callback_query', (query) => {
     // 🎁 REFER & EARN CALLBACK
     if (data === 'refer_earn') {
         const referLink = `https://t.me/${myBotUsername}?start=${chatId}`;
-        const referMsg = `🎁 **Refer & Earn ₹20!**\n\nIs link ko apne doston aur padosiyon ke sath WhatsApp par share karein. \nJaise hi koi is link se humari dukan join karega, **Aapko aur aapke dost dono ko ₹20 ka free Kirana Wallet balance milega!**\n\n👇 Aapka Link Ise Copy Karein:\n${referLink}`;
+        const referMsg = `🎁 **Refer & Earn ₹20!**\n\nShare this link with your friends and neighbors on WhatsApp. \nAs soon as someone joins our store using this link, **both you and your friend will receive ₹20 free Kirana Wallet balance!**\n\n👇 Copy your link below:\n${referLink}`;
         bot.sendMessage(chatId, referMsg, {parse_mode: 'Markdown'});
         return;
     }
@@ -299,7 +309,7 @@ bot.on('callback_query', (query) => {
     }
 
     if (data === 'support_chat') {
-        userStates[chatId].status = 'waiting_for_support'; bot.sendMessage(chatId, "💬 Kripya apna sawaal ya problem yahan likhein:"); return;
+        userStates[chatId].status = 'waiting_for_support'; bot.sendMessage(chatId, "💬 Please type your question or issue here:"); return;
     }
 
     if (data.startsWith('status_')) {
@@ -307,14 +317,14 @@ bot.on('callback_query', (query) => {
         let orders = readDB('orders.json'); let orderIndex = orders.findIndex(o => o.id === orderId);
         if(orderIndex !== -1) { orders[orderIndex].status = status; writeDB('orders.json', orders); }
         let msg = "";
-        if (status === 'PACKED') msg = `📦 Aapka order (ID: ${orderId}) pack ho gaya hai!`;
-        if (status === 'OUT') msg = `🚚 Aapka order delivery ke liye nikal chuka hai.`;
-        if (status === 'DELIVERED') msg = `✅ Aapka order successfully deliver ho gaya hai. Shukriya!`;
+        if (status === 'PACKED') msg = `📦 Your order (ID: ${orderId}) has been packed!`;
+        if (status === 'OUT') msg = `🚚 Your order is out for delivery.`;
+        if (status === 'DELIVERED') msg = `✅ Your order has been successfully delivered. Thank you!`;
         bot.sendMessage(custChatId, msg); bot.sendMessage(chatId, `✅ Status updated to ${status}`); return;
     }
 
     if (data.startsWith('add_') || data === 'checkout_delivery' || data === 'checkout_pickup') {
-        if (!isStoreOpen()) return bot.sendMessage(chatId, "🌙 Sorry, humari dukan abhi band hai (Subah 8 AM se Raat 10 PM).");
+        if (!isStoreOpen()) return bot.sendMessage(chatId, "🌙 Sorry, our store is currently closed. Operating hours are 8 AM to 10 PM.");
     }
 
     if (data === 'skip_promo') {
@@ -323,8 +333,8 @@ bot.on('callback_query', (query) => {
     else if (data === 'repeat_order') {
         const orders = readDB('orders.json'); const lastOrder = [...orders].reverse().find(o => o.chatId === chatId);
         if (lastOrder && lastOrder.items) {
-            userStates[chatId].cart = [...lastOrder.items]; bot.sendMessage(chatId, "🔄 Aapka pichla order cart mein add ho gaya hai!", { reply_markup: { inline_keyboard: [[{ text: '🛒 View Cart', callback_data: 'view_cart' }]] } });
-        } else bot.sendMessage(chatId, "❌ Humein aapka koi pichla order nahi mila.");
+            userStates[chatId].cart = [...lastOrder.items]; bot.sendMessage(chatId, "🔄 Your previous order has been added to the cart!", { reply_markup: { inline_keyboard: [[{ text: '🛒 View Cart', callback_data: 'view_cart' }]] } });
+        } else bot.sendMessage(chatId, "❌ We couldn't find any previous orders for you.");
     }
     else if (data === 'search_product') {
         userStates[chatId].status = 'waiting_for_search'; bot.sendMessage(chatId, "🔍 Type the product name:");
@@ -370,7 +380,7 @@ bot.on('callback_query', (query) => {
             bot.sendMessage(chatId, `🏠 Save Address:\n${profiles[chatId]}\nUse this?`, { reply_markup: { inline_keyboard: [ [{ text: '✅ Yes', callback_data: 'use_saved_address' }], [{ text: '📝 New Address', callback_data: 'enter_new_address' }] ] } });
         } else {
             userStates[chatId].status = 'waiting_for_contact'; 
-            bot.sendMessage(chatId, "📲 Kripya apna verified phone number share karein:", { reply_markup: { keyboard: [[{ text: '📲 Share Contact', request_contact: true }]], resize_keyboard: true, one_time_keyboard: true } });
+            bot.sendMessage(chatId, "📲 Please share your verified phone number:", { reply_markup: { keyboard: [[{ text: '📲 Share Contact', request_contact: true }]], resize_keyboard: true, one_time_keyboard: true } });
         }
     }
     else if (data === 'use_saved_address') {
@@ -379,7 +389,7 @@ bot.on('callback_query', (query) => {
     }
     else if (data === 'enter_new_address') {
         userStates[chatId].status = 'waiting_for_contact'; 
-        bot.sendMessage(chatId, "📲 Kripya apna verified phone number share karein:", { reply_markup: { keyboard: [[{ text: '📲 Share Contact', request_contact: true }]], resize_keyboard: true, one_time_keyboard: true } });
+        bot.sendMessage(chatId, "📲 Please share your verified phone number:", { reply_markup: { keyboard: [[{ text: '📲 Share Contact', request_contact: true }]], resize_keyboard: true, one_time_keyboard: true } });
     }
     else if (data === 'checkout_pickup') {
         userStates[chatId].deliveryType = 'Store Pickup'; userStates[chatId].status = 'waiting_for_pickup_name'; bot.sendMessage(chatId, "Send Name and Phone:");
@@ -416,7 +426,7 @@ bot.on('callback_query', (query) => {
             bot.sendMessage(chatId, `🎉 Order Confirmed! (ID: ${orderId})\nKeep ₹${userStates[chatId].finalTotal} cash ready!`);
         }
 
-        if (cashbackEarned > 0) bot.sendMessage(chatId, `🎁 **Badhai ho!** Aapko ₹${cashbackEarned} ka Cashback mila hai!`, {parse_mode: 'Markdown'});
+        if (cashbackEarned > 0) bot.sendMessage(chatId, `🎁 **Congratulations!** You have received a cashback of ₹${cashbackEarned}!`, {parse_mode: 'Markdown'});
 
         const printUrl = `https://mystore-bot-live.onrender.com/print-bill/${orderId}`; 
         const adminAlert = `🚨 NEW ORDER RECEIVED 🚨\n\n👤 Details: ${userStates[chatId].tempAddress}\n🚚 Mode: ${userStates[chatId].deliveryType}\n💰 Total: ₹${userStates[chatId].finalTotal} (${paymentMode})\n\n🖨️ Print Bill:\n${printUrl}`;
