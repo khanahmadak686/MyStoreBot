@@ -4,7 +4,7 @@ const path = require('path');
 const mongoose = require('mongoose');
 
 // --- CREDENTIALS & SETTINGS ---
-const token = '8998018950:AAECsgWiq5cSLYyh63MC2lqRmKw2a8-TzTU';
+const token = process.env.TELEGRAM_TOKEN;
 const adminChatId = '1703328653'; 
 const myUpiId = 'ar844042@okicici'; 
 const myStoreName = 'My Kirana Store';
