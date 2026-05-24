@@ -2,71 +2,241 @@
 <html lang="en">
 <head>
     <meta charset="UTF-8">
-    <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>🛵 Rider Dashboard</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+    <title>🛵 Rider Portal | Kirana Pro</title>
+    <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&display=swap" rel="stylesheet">
+    <link rel="stylesheet" href="https://cdnjs.cloudflare.com/ajax/libs/font-awesome/6.4.0/css/all.min.css">
+    
     <style>
-        body { font-family: Arial, sans-serif; background-color: #f4f4f9; padding: 20px; margin: 0; }
-        .header { background: #2c3e50; color: white; padding: 15px; text-align: center; border-radius: 8px; margin-bottom: 20px; }
-        .order-card { background: white; padding: 15px; border-radius: 8px; box-shadow: 0 2px 5px rgba(0,0,0,0.1); margin-bottom: 15px; border-left: 5px solid #f39c12; }
-        .order-card h3 { margin: 0 0 10px 0; color: #333; }
-        .order-card p { margin: 5px 0; color: #555; line-height: 1.4; }
-        .btn-deliver { display: block; width: 100%; background: #27ae60; color: white; border: none; padding: 12px; font-size: 16px; border-radius: 5px; cursor: pointer; margin-top: 15px; font-weight: bold; }
-        .btn-deliver:hover { background: #2ecc71; }
-        .cash-badge { background: #e74c3c; color: white; padding: 3px 8px; border-radius: 3px; font-size: 12px; font-weight: bold; }
-        .upi-badge { background: #2980b9; color: white; padding: 3px 8px; border-radius: 3px; font-size: 12px; font-weight: bold; }
+        :root {
+            --primary: #4f46e5;
+            --success: #10b981;
+            --success-hover: #059669;
+            --danger: #ef4444;
+            --bg-color: #f3f4f6;
+            --card-bg: #ffffff;
+            --text-main: #1f2937;
+            --text-muted: #6b7280;
+            --border: #e5e7eb;
+        }
+
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+            font-family: 'Inter', sans-serif;
+            -webkit-tap-highlight-color: transparent;
+        }
+
+        body {
+            background-color: var(--bg-color);
+            color: var(--text-main);
+            padding-bottom: 30px;
+        }
+
+        /* App Header */
+        .app-header {
+            background: var(--primary);
+            color: white;
+            padding: 20px 15px;
+            text-align: center;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.1);
+            position: sticky;
+            top: 0;
+            z-index: 100;
+            border-bottom-left-radius: 15px;
+            border-bottom-right-radius: 15px;
+        }
+
+        .app-header h2 { font-size: 20px; font-weight: 700; display: flex; align-items: center; justify-content: center; gap: 8px; }
+        .app-header p { font-size: 13px; margin-top: 5px; opacity: 0.9; }
+
+        /* Orders Container */
+        #orders-container {
+            padding: 20px 15px;
+            max-width: 500px;
+            margin: 0 auto;
+        }
+
+        /* Order Card */
+        .order-card {
+            background: var(--card-bg);
+            border-radius: 12px;
+            padding: 20px;
+            box-shadow: 0 4px 6px -1px rgba(0, 0, 0, 0.05);
+            margin-bottom: 20px;
+            border: 1px solid var(--border);
+            position: relative;
+            overflow: hidden;
+        }
+
+        .order-card::before {
+            content: '';
+            position: absolute;
+            top: 0; left: 0;
+            width: 4px; height: 100%;
+            background: var(--primary);
+        }
+
+        .order-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 15px;
+            padding-bottom: 10px;
+            border-bottom: 1px dashed var(--border);
+        }
+
+        .order-id { font-size: 14px; font-weight: 700; color: var(--text-muted); }
+        
+        .info-row {
+            display: flex;
+            align-items: flex-start;
+            gap: 12px;
+            margin-bottom: 12px;
+            font-size: 15px;
+            line-height: 1.5;
+        }
+
+        .info-icon {
+            color: var(--primary);
+            font-size: 18px;
+            margin-top: 2px;
+        }
+
+        /* Badges */
+        .badge-container { margin: 15px 0; }
+        
+        .badge {
+            display: inline-flex;
+            align-items: center;
+            gap: 6px;
+            padding: 6px 12px;
+            border-radius: 50px;
+            font-size: 13px;
+            font-weight: 700;
+        }
+
+        .badge-cash { background: #fee2e2; color: var(--danger); border: 1px solid #fecaca; }
+        .badge-upi { background: #d1fae5; color: var(--success); border: 1px solid #a7f3d0; }
+
+        /* Action Button */
+        .btn-deliver {
+            width: 100%;
+            background: var(--success);
+            color: white;
+            border: none;
+            padding: 15px;
+            font-size: 16px;
+            font-weight: 600;
+            border-radius: 8px;
+            cursor: pointer;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+            gap: 8px;
+            transition: background 0.2s, transform 0.1s;
+            margin-top: 5px;
+        }
+
+        .btn-deliver:active { transform: scale(0.98); }
+        .btn-deliver:hover { background: var(--success-hover); }
+
+        /* Empty State */
+        .empty-state {
+            text-align: center;
+            padding: 40px 20px;
+            color: var(--text-muted);
+        }
+        .empty-state i { font-size: 48px; color: #d1d5db; margin-bottom: 15px; }
+
+        /* Loader */
+        .loader { text-align: center; padding: 20px; color: var(--text-muted); font-weight: 500; }
+        .loader i { animation: spin 1s linear infinite; margin-right: 8px; }
+        @keyframes spin { 100% { transform: rotate(360deg); } }
+
     </style>
 </head>
 <body>
 
-    <div class="header">
-        <h2>🛵 Active Deliveries</h2>
-        <p>Orders ready to be delivered</p>
-    </div>
+    <header class="app-header">
+        <h2><i class="fa-solid fa-motorcycle"></i> Rider Portal</h2>
+        <p>Live Deliveries Dashboard</p>
+    </header>
 
-    <div id="orders-container">
-        <p style="text-align:center;">Loading orders...</p>
-    </div>
+    <main id="orders-container">
+        <div class="loader"><i class="fa-solid fa-spinner"></i> Fetching active orders...</div>
+    </main>
 
     <script>
         async function fetchOrders() {
-            const res = await fetch('/api/rider-orders');
-            const orders = await res.json();
-            const container = document.getElementById('orders-container');
-            container.innerHTML = '';
+            try {
+                const res = await fetch('/api/rider-orders');
+                const orders = await res.json();
+                const container = document.getElementById('orders-container');
+                container.innerHTML = '';
 
-            if(orders.length === 0) {
-                container.innerHTML = '<p style="text-align:center; color:#777;">No active deliveries right now. 🎉</p>';
-                return;
+                if(orders.length === 0) {
+                    container.innerHTML = `
+                        <div class="empty-state">
+                            <i class="fa-solid fa-mug-hot"></i>
+                            <h3>No Active Orders</h3>
+                            <p style="margin-top:5px; font-size:14px;">Take a break! New orders will appear here.</p>
+                        </div>
+                    `;
+                    return;
+                }
+
+                orders.forEach(order => {
+                    let badge = order.payment_mode === 'Cash' 
+                        ? `<div class="badge badge-cash"><i class="fa-solid fa-indian-rupee-sign"></i> Collect ₹${order.total} Cash</div>` 
+                        : `<div class="badge badge-upi"><i class="fa-solid fa-check-circle"></i> Paid Online (No Cash)</div>`;
+
+                    let card = document.createElement('div');
+                    card.className = 'order-card';
+                    card.innerHTML = `
+                        <div class="order-header">
+                            <span class="order-id">#${order.id}</span>
+                            <span style="font-size:12px; color:#6b7280; font-weight:600;"><i class="fa-regular fa-clock"></i> Pending</span>
+                        </div>
+                        
+                        <div class="info-row">
+                            <div class="info-icon"><i class="fa-solid fa-location-dot"></i></div>
+                            <div>
+                                <span style="font-size:12px; color:#6b7280; font-weight:600; display:block;">DELIVERY DETAILS</span>
+                                <b>${order.customer_details}</b>
+                            </div>
+                        </div>
+
+                        <div class="badge-container">
+                            ${badge}
+                        </div>
+
+                        <button class="btn-deliver" onclick="markDelivered('${order.id}')">
+                            <i class="fa-solid fa-check-double"></i> Mark as Delivered
+                        </button>
+                    `;
+                    container.appendChild(card);
+                });
+            } catch (err) {
+                document.getElementById('orders-container').innerHTML = '<div class="empty-state">❌ Error loading orders. Please refresh the page.</div>';
             }
-
-            orders.forEach(order => {
-                let badge = order.payment_mode === 'Cash' 
-                    ? `<span class="cash-badge">Collect ₹${order.total} Cash</span>` 
-                    : `<span class="upi-badge">UPI Paid (No Cash)</span>`;
-
-                let card = document.createElement('div');
-                card.className = 'order-card';
-                card.innerHTML = `
-                    <h3>Order ID: ${order.id}</h3>
-                    <p><b>📍 Address & Contact:</b><br>${order.customer_details}</p>
-                    <p><b>📦 Items Total:</b> ₹${order.total}</p>
-                    <p>${badge}</p>
-                    <button class="btn-deliver" onclick="markDelivered('${order.id}')">✅ Mark as Delivered</button>
-                `;
-                container.appendChild(card);
-            });
         }
 
         async function markDelivered(orderId) {
-            if(confirm("Are you sure this order is delivered to the customer?")) {
+            if(confirm("Confirm delivery? Has the package been handed over to the customer?")) {
+                // Change button state to loading visually
+                event.target.innerHTML = '<i class="fa-solid fa-spinner fa-spin"></i> Updating...';
+                event.target.style.opacity = '0.7';
+                
                 await fetch(`/api/mark-delivered/${orderId}`, { method: 'POST' });
-                alert("Order marked as delivered!");
-                fetchOrders(); // Refresh the list
+                fetchOrders(); // Refresh the list automatically
             }
         }
 
-        // Load orders immediately
+        // Auto-refresh every 30 seconds so riders don't have to reload manually
         fetchOrders();
+        setInterval(fetchOrders, 30000);
     </script>
 </body>
 </html>
