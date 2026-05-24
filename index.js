@@ -2,9 +2,10 @@ const TelegramBot = require('node-telegram-bot-api');
 const express = require('express');
 const path = require('path');
 const mongoose = require('mongoose');
+const cors = require('cors'); // 🛠️ NAYA: CORS Add kiya
 
 // ==========================================
-// 🛡️ CRASH PREVENTION (Bot will never go offline)
+// 🛡️ CRASH PREVENTION
 // ==========================================
 process.on('unhandledRejection', (reason, promise) => {
     console.error('⚠️ Unhandled Rejection Caught and Ignored:', reason.message || reason);
@@ -44,6 +45,10 @@ const bot = new TelegramBot(token, { webHook: true });
 bot.setWebHook(`https://mystore-bot-live.onrender.com/bot${token}`);
 
 const app = express();
+
+// 🛠️ NAYA: Render ab app ko block nahi karega
+app.use(cors()); 
+
 app.use(express.urlencoded({ extended: true })); 
 app.use(express.json()); 
 
@@ -115,7 +120,6 @@ function sendPaymentOptions(chatId) {
     bot.sendMessage(chatId, msgText, { reply_markup: { inline_keyboard: [ [{ text: '📱 Pay via UPI (Online)', callback_data: 'pay_upi' }], [{ text: '💵 Cash / Pay at Store', callback_data: 'pay_cash' }] ] } });
 }
 
-// 🛠️ FIX: Bulletproof Image Sending Logic
 async function sendCategoryBatch(chatId) {
     const products = await Product.find({ category: userStates[chatId].currentCategory });
     const page = userStates[chatId].categoryPage;
@@ -136,7 +140,6 @@ async function sendCategoryBatch(chatId) {
                 caption: `📦 ${product.name} (${product.unit||''})\n💰 Price: ₹${product.price}\n${stockText}`,
                 reply_markup: { inline_keyboard: buttons }
             }).catch(async (err) => {
-                // If Telegram rejects the image, send text instead of crashing
                 await bot.sendMessage(chatId, fallbackMsg, { parse_mode: 'Markdown', reply_markup: { inline_keyboard: buttons } });
             });
         }
@@ -145,6 +148,44 @@ async function sendCategoryBatch(chatId) {
     if (end < products.length) bot.sendMessage(chatId, `Showing ${end} of ${products.length} items.`, { reply_markup: { inline_keyboard: [[{ text: '⬇️ Show More', callback_data: 'next_page' }]] } });
     else if (products.length > 0) bot.sendMessage(chatId, `✅ End of category. Check your cart:`, { reply_markup: { inline_keyboard: [[{ text: '🛒 View Cart', callback_data: 'view_cart' }]] } });
 }
+
+// ==========================================
+// 📱 MOBILE APP APIs (React Native)
+// ==========================================
+
+app.get('/api/app/products', async (req, res) => {
+    try {
+        const products = await Product.find({});
+        res.json({ success: true, data: products });
+    } catch (err) {
+        res.status(500).json({ success: false, error: "Server error" });
+    }
+});
+
+app.post('/api/app/order', async (req, res) => {
+    try {
+        const { customerName, phone, address, items, total, paymentMode } = req.body;
+        const orderId = `APP_${Date.now()}`;
+        
+        await Order.create({
+            id: orderId, chatId: phone, date: new Date().toLocaleString(), status: 'PENDING', 
+            customer_details: `${customerName}, ${address} (Phone: ${phone})`, delivery_type: 'Home Delivery',
+            payment_mode: paymentMode, items: items, 
+            delivery_fee: 0, discount: 0, wallet_used: 0, total: total
+        });
+
+        for (let cartItem of items) {
+            await Product.findOneAndUpdate({ id: cartItem.id }, { $inc: { stock: -cartItem.qty } });
+        }
+
+        const adminAlert = `📱 NEW APP ORDER 🚨\n\n👤 Name: ${customerName}\n📞 Phone: ${phone}\n📍 Address: ${address}\n💰 Total: ₹${total} (${paymentMode})\n\nCheck Admin Dashboard!`;
+        bot.sendMessage(adminChatId, adminAlert);
+
+        res.json({ success: true, orderId: orderId, message: "Order Placed Successfully!" });
+    } catch (err) {
+        res.status(500).json({ success: false, error: err.message });
+    }
+});
 
 // ==========================================
 // 🌐 WEB ROUTES & APIS
@@ -214,7 +255,6 @@ bot.on('message', async (msg) => {
     const text = msg.text || '';
     initUser(chatId);
 
-    // Search Logic with Bulletproof Image Handler
     if (userStates[chatId].status === 'waiting_for_search') {
         const searchTerm = text.toLowerCase();
         const products = await Product.find({ name: { $regex: searchTerm, $options: 'i' } });
