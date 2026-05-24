@@ -3,8 +3,18 @@ const express = require('express');
 const path = require('path');
 const mongoose = require('mongoose');
 
+// ==========================================
+// 🛡️ CRASH PREVENTION (Bot will never go offline)
+// ==========================================
+process.on('unhandledRejection', (reason, promise) => {
+    console.error('⚠️ Unhandled Rejection Caught and Ignored:', reason.message || reason);
+});
+process.on('uncaughtException', (err) => {
+    console.error('⚠️ Uncaught Exception Caught and Ignored:', err.message || err);
+});
+
 // --- CREDENTIALS & SETTINGS ---
-const token = process.env.TELEGRAM_TOKEN; // Safe Token
+const token = process.env.TELEGRAM_TOKEN; 
 const adminChatId = '1703328653'; 
 const myUpiId = 'ar844042@okicici'; 
 const myStoreName = 'My Kirana Store';
@@ -105,7 +115,7 @@ function sendPaymentOptions(chatId) {
     bot.sendMessage(chatId, msgText, { reply_markup: { inline_keyboard: [ [{ text: '📱 Pay via UPI (Online)', callback_data: 'pay_upi' }], [{ text: '💵 Cash / Pay at Store', callback_data: 'pay_cash' }] ] } });
 }
 
-// 🛠️ FIX 1: Error handling added for broken image URLs
+// 🛠️ FIX: Bulletproof Image Sending Logic
 async function sendCategoryBatch(chatId) {
     const products = await Product.find({ category: userStates[chatId].currentCategory });
     const page = userStates[chatId].categoryPage;
@@ -117,17 +127,17 @@ async function sendCategoryBatch(chatId) {
     for (const product of currentBatch) {
         let stockText = product.stock > 0 ? `📦 Stock Available` : `🔴 OUT OF STOCK`;
         let buttons = product.stock > 0 ? [[{ text: '➕ Add to Cart', callback_data: `add_${product.id}` }]] : [];
+        let fallbackMsg = `📦 *${product.name}* (${product.unit||''})\n💰 Price: ₹${product.price}\n${stockText}\n\n*(Product image unavailable - Invalid Link)*`;
         
-        try {
-            await bot.sendPhoto(chatId, product.image, {
+        if (!product.image || !product.image.startsWith('http')) {
+            await bot.sendMessage(chatId, fallbackMsg, { parse_mode: 'Markdown', reply_markup: { inline_keyboard: buttons } });
+        } else {
+            bot.sendPhoto(chatId, product.image, {
                 caption: `📦 ${product.name} (${product.unit||''})\n💰 Price: ₹${product.price}\n${stockText}`,
                 reply_markup: { inline_keyboard: buttons }
-            });
-        } catch (err) {
-            // If the image URL is broken, send as plain text
-            await bot.sendMessage(chatId, `📦 ${product.name} (${product.unit||''})\n💰 Price: ₹${product.price}\n${stockText}\n\n*(Product image unavailable)*`, { 
-                parse_mode: 'Markdown',
-                reply_markup: { inline_keyboard: buttons } 
+            }).catch(async (err) => {
+                // If Telegram rejects the image, send text instead of crashing
+                await bot.sendMessage(chatId, fallbackMsg, { parse_mode: 'Markdown', reply_markup: { inline_keyboard: buttons } });
             });
         }
     }
@@ -204,7 +214,7 @@ bot.on('message', async (msg) => {
     const text = msg.text || '';
     initUser(chatId);
 
-    // 🛠️ FIX 2: Search Logic added!
+    // Search Logic with Bulletproof Image Handler
     if (userStates[chatId].status === 'waiting_for_search') {
         const searchTerm = text.toLowerCase();
         const products = await Product.find({ name: { $regex: searchTerm, $options: 'i' } });
@@ -216,18 +226,21 @@ bot.on('message', async (msg) => {
 
         bot.sendMessage(chatId, `🔍 Found ${products.length} results for "${text}":`);
         
-        const results = products.slice(0, 5); // Show max 5 results in search
+        const results = products.slice(0, 5); 
         for (const product of results) {
             let stockText = product.stock > 0 ? `📦 Stock Available` : `🔴 OUT OF STOCK`;
             let buttons = product.stock > 0 ? [[{ text: '➕ Add to Cart', callback_data: `add_${product.id}` }]] : [];
-            
-            try {
-                await bot.sendPhoto(chatId, product.image, {
+            let fallbackMsg = `📦 *${product.name}* (${product.unit||''})\n💰 Price: ₹${product.price}\n${stockText}\n\n*(Product image unavailable - Invalid Link)*`;
+
+            if (!product.image || !product.image.startsWith('http')) {
+                await bot.sendMessage(chatId, fallbackMsg, { parse_mode: 'Markdown', reply_markup: { inline_keyboard: buttons } });
+            } else {
+                bot.sendPhoto(chatId, product.image, {
                     caption: `📦 ${product.name} (${product.unit||''})\n💰 Price: ₹${product.price}\n${stockText}`,
                     reply_markup: { inline_keyboard: buttons }
+                }).catch(async (err) => {
+                    await bot.sendMessage(chatId, fallbackMsg, { parse_mode: 'Markdown', reply_markup: { inline_keyboard: buttons } });
                 });
-            } catch (err) {
-                await bot.sendMessage(chatId, `📦 ${product.name} (${product.unit||''})\n💰 Price: ₹${product.price}\n${stockText}\n\n*(Product image unavailable)*`, { parse_mode: 'Markdown', reply_markup: { inline_keyboard: buttons } });
             }
         }
         userStates[chatId].status = 'idle';
